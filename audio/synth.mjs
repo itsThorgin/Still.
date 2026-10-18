@@ -3,6 +3,10 @@ import { ToneSweep } from './tone-sweep.mjs';
 import { RateMotion } from './rate-motion.mjs';
 import { ChamberSoundscape } from './soundscape.mjs';
 import { RetroSoundscape } from './retro.mjs';
+import { nextRetroStyle } from '../retro-styles.mjs';
+import { GardenRotation, GARDEN_FADE_OUT_SECONDS, GARDEN_FADE_IN_SECONDS } from '../garden-options.mjs';
+import { SequencePalette, sequenceToneSeed } from '../sequence-palettes.mjs';
+import { createSequenceTone, sampleSequenceTone } from './sequence-instruments.mjs';
 
 const TAU = Math.PI * 2;
 const PENTATONIC = [0, 2, 4, 7, 9];
@@ -12,9 +16,17 @@ export class SoundGenerator {
   constructor(sampleRate, kind, params, seed = 1, motion, sweep, rateMotion) {
     this.sampleRate = sampleRate;
     this.kind = kind;
+    this.sequencePalette = ['sequence', 'plucks', 'drift'].includes(kind) ? new SequencePalette(sampleRate, kind, seed, params.palette ?? 1) : null;
+    this.sequenceSeed = seed; this.noteSerial = 0;
     this.rateMotion = ['binaural', 'isochronic', 'soundscape'].includes(kind) ? new RateMotion(params.beat, seed, rateMotion) : null;
     this.soundscape = kind === 'soundscape' ? new ChamberSoundscape(sampleRate, params, seed) : null;
+    this.rotation = this.soundscape ? new GardenRotation(sampleRate, seed, params.variationMinutes) : null;
+    this.gardenTransition = null;
+    this.pendingSoundscape = null;
+    this.variationVersion = 0;
     this.retro = kind === 'retro' ? new RetroSoundscape(sampleRate, params, seed) : null;
+    this.retroRotation = this.retro ? new GardenRotation(sampleRate, seed, params.variationMinutes) : null;
+    this.retroTransition = null;
     this.target = { ...params };
     this.renderTarget = this.target;
     this.motion = motion?.controls?.length ? new GentleMotion(params, motion.controls, seed, motion) : null;
@@ -54,11 +66,25 @@ export class SoundGenerator {
 
   setParams(params) {
     this.sweep = null;
+    const previousStyle = this.target.style;
     this.target = { ...params };
     this.motion?.recenter(params, this.frames / this.sampleRate);
+    this.sequencePalette?.configure(params.palette ?? 1, this.frames);
     this.rateMotion?.recenter(params.beat, this.frames / this.sampleRate);
     this.soundscape?.setParams(params, this.frames);
-    this.retro?.setParams(params, this.frames);
+    const previousInterval = this.rotation?.minutes;
+    this.rotation?.configure(params.variationMinutes, this.frames);
+    if (previousInterval !== this.rotation?.minutes) this.pendingSoundscape = null;
+    if (this.pendingSoundscape && ['influence', 'arrangements', 'strings'].some((key) => params[key] !== this.pendingParams[key])) this.pendingSoundscape = null;
+    if (this.retro) {
+      const changedStyle = params.style !== previousStyle;
+      this.retroRotation.configure(params.variationMinutes, this.frames);
+      if (changedStyle) this.retroRotation.schedule(this.frames);
+      if (this.retroTransition?.phase === 'out') {
+        // A manual choice during the long fade becomes its destination.
+        if (changedStyle) this.retroTransition.selection = params.style;
+      } else this.retro.setParams(params, this.frames);
+    }
     this.renderTarget = this.motion ? this.motion.sample(this.frames / this.sampleRate) : this.target;
   }
 
@@ -72,6 +98,83 @@ export class SoundGenerator {
 
   setMonitor(settings) {
     this.soundscape?.setMonitor(settings.highSolo);
+  }
+
+  advanceGarden() {
+    // Prepare one small score/table task per quantum before the deadline,
+    // spreading the new voice spectra across many audio blocks.
+    if (this.frames % 128 === 0 && this.gardenTransition?.phase !== 'in'
+      && (this.gardenTransition?.phase === 'out' || this.frames >= this.rotation.nextFrame - this.sampleRate * 30)) {
+      if (!this.pendingSoundscape) {
+        this.pendingParams = { ...this.target };
+        this.pendingSoundscape = new ChamberSoundscape(this.sampleRate, this.target, this.rotation.nextSeed(), true);
+      }
+      const task = this.pendingSoundscape.preparations?.next();
+      task?.value?.();
+      if (task?.done) this.pendingSoundscape.preparations = null;
+    }
+    if (!this.gardenTransition && this.frames >= this.rotation.nextFrame) {
+      this.gardenTransition = { phase: 'out', start: this.frames };
+    }
+    if (this.gardenTransition?.phase === 'in') {
+      if (this.frames >= this.gardenTransition.start + this.sampleRate * GARDEN_FADE_IN_SECONDS) this.gardenTransition = null;
+      return;
+    }
+    if (this.gardenTransition?.phase !== 'out'
+      || this.frames < this.gardenTransition.start + this.sampleRate * GARDEN_FADE_OUT_SECONDS) return;
+    // Commit the next seed only at silence. Its musical opening starts here,
+    // and its next randomized countdown starts with it.
+    this.rotation.changeSeed(this.frames);
+    const previous = this.soundscape;
+    this.soundscape = this.pendingSoundscape ?? new ChamberSoundscape(this.sampleRate, this.target, this.rotation.seed);
+    if (this.soundscape.preparations) {
+      for (const task of this.soundscape.preparations) task?.();
+      this.soundscape.preparations = null;
+    }
+    this.soundscape.range = [this.target.highLow, this.target.highHigh];
+    this.pendingSoundscape = null;
+    // Preserve oscillator phase across the quiet handover.
+    this.soundscape.leftPhase = previous.leftPhase; this.soundscape.rightPhase = previous.rightPhase;
+    this.soundscape.soloTarget = previous.soloTarget; this.soundscape.solo = previous.solo;
+    this.gardenTransition = { phase: 'in', start: this.frames };
+    this.variationVersion++;
+  }
+
+  gardenGain() {
+    if (!this.gardenTransition) return 1;
+    const { phase, start } = this.gardenTransition;
+    const seconds = phase === 'out' ? GARDEN_FADE_OUT_SECONDS : GARDEN_FADE_IN_SECONDS;
+    const position = Math.max(0, Math.min(1, (this.frames - start) / (this.sampleRate * seconds)));
+    return phase === 'out' ? 1 - position : position;
+  }
+
+  advanceRetro() {
+    if (!this.retroTransition && this.frames >= this.retroRotation.nextFrame) {
+      this.retroTransition = { phase: 'out', start: this.frames };
+    }
+    const transition = this.retroTransition;
+    if (!transition) return;
+    if (transition.phase === 'in') {
+      if (this.frames >= transition.start + this.sampleRate * GARDEN_FADE_IN_SECONDS) this.retroTransition = null;
+      return;
+    }
+    if (this.frames < transition.start + this.sampleRate * GARDEN_FADE_OUT_SECONDS) return;
+    this.retroRotation.changeSeed(this.frames);
+    const seed = this.retroRotation.seed;
+    const style = transition.selection === undefined ? nextRetroStyle(seed, this.retro.plan.style.value) : transition.selection;
+    this.target.style = style;
+    this.params.style = style;
+    this.retro = new RetroSoundscape(this.sampleRate, this.target, seed);
+    this.retroTransition = { phase: 'in', start: this.frames };
+    this.variationVersion++;
+  }
+
+  retroGain() {
+    if (!this.retroTransition) return 1;
+    const { phase, start } = this.retroTransition;
+    const seconds = phase === 'out' ? GARDEN_FADE_OUT_SECONDS : GARDEN_FADE_IN_SECONDS;
+    const position = Math.max(0, Math.min(1, (this.frames - start) / (this.sampleRate * seconds)));
+    return phase === 'out' ? 1 - position : position;
   }
 
   addNote() {
@@ -94,7 +197,8 @@ export class SoundGenerator {
     const pan = this.random() * 0.8 - 0.4;
     const amplitude = style === 'drift' ? 0.065 + this.random() * 0.01 : 0.22 + this.random() * 0.06;
     // Do not cut off a ringing note when the voice limit is reached.
-    if (this.voices.length < 16) this.voices.push({ phase: 0, frequency, age: 0, duration, amplitude, left: Math.sqrt((1 - pan) / 2), right: Math.sqrt((1 + pan) / 2) });
+    if (this.voices.length < 16) this.voices.push({ phase: 0, frequency, age: 0, duration, amplitude, left: Math.sqrt((1 - pan) / 2), right: Math.sqrt((1 + pan) / 2),
+      tone: createSequenceTone(style, frequency, duration, this.sampleRate, sequenceToneSeed(this.sequenceSeed, style, this.noteSerial++)) });
     let gap = (60 / density) * (0.75 + this.random() * 0.5);
     if (style === 'plucks') {
       if (this.phraseRemaining === 0) this.phraseRemaining = 2 + Math.floor(this.random() * 3);
@@ -142,13 +246,17 @@ export class SoundGenerator {
           r = l;
         }
       } else if (this.soundscape) {
+        this.advanceGarden();
         this.soundscape.sample(p, this.frames);
-        l = this.soundscape.left;
-        r = this.soundscape.right;
+        const gain = this.gardenGain();
+        l = this.soundscape.left * gain;
+        r = this.soundscape.right * gain;
       } else if (this.retro) {
+        this.advanceRetro();
         this.retro.sample(p, this.frames);
-        l = this.retro.left;
-        r = this.retro.right;
+        const gain = this.retroGain();
+        l = this.retro.left * gain;
+        r = this.retro.right * gain;
       } else if (this.kind === 'noise') {
         this.noiseCounter = (this.noiseCounter + 1) & 255;
         let row = 0;
@@ -166,6 +274,7 @@ export class SoundGenerator {
         this.lowState2 += upper * (this.lowState - this.lowState2);
         l = r = this.lowState2 * 1.4;
       } else if (this.kind === 'sequence' || this.kind === 'plucks' || this.kind === 'drift') {
+        const paletteMix = this.sequencePalette.sample(this.frames);
         if (this.frames >= this.nextNote) this.addNote();
         for (let voiceIndex = this.voices.length - 1; voiceIndex >= 0; voiceIndex--) {
           const voice = this.voices[voiceIndex];
@@ -185,7 +294,9 @@ export class SoundGenerator {
               ? Math.sin(voice.phase) + (0.16 * Math.sin(voice.phase * 2) + 0.05 * Math.sin(voice.phase * 3)) * Math.exp(-age * 3)
               : Math.sin(voice.phase) + 0.22 * Math.sin(voice.phase * 2) * Math.exp(-age * 1.5);
           }
-          const sound = wave * voice.amplitude * envelope;
+          const originalSound = wave * voice.amplitude * envelope;
+          const newSound = sampleSequenceTone(voice.tone, age) * voice.amplitude;
+          const sound = paletteMix === 0 ? originalSound : paletteMix === 1 ? newSound : originalSound * (1 - paletteMix) + newSound * paletteMix;
           l += sound * voice.left;
           r += sound * voice.right;
           voice.phase = (voice.phase + TAU * voice.frequency / sr) % TAU;

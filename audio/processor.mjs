@@ -9,6 +9,8 @@ class StillProcessor extends AudioWorkletProcessor {
     this.nextRateReport = 0;
     this.needsRateReport = true;
     this.reportedRateMoving = false;
+    this.reportedVariation = 0;
+    this.reportedGardenPlan = null;
     this.nextReport = 0;
     this.needsReport = true;
     this.reportedMoving = false;
@@ -31,6 +33,17 @@ class StillProcessor extends AudioWorkletProcessor {
       return false;
     }
     this.generator.render(left, right);
+    const gardenPlan = this.generator.soundscape?.plan;
+    if (gardenPlan?.description && gardenPlan !== this.reportedGardenPlan) {
+      this.reportedGardenPlan = gardenPlan;
+      this.port.postMessage({ type: 'garden-choices', description: gardenPlan.description });
+    }
+    if (this.generator.variationVersion !== this.reportedVariation) {
+      this.reportedVariation = this.generator.variationVersion;
+      this.port.postMessage(this.generator.retro
+        ? { type: 'variation', seed: this.generator.retroRotation.seed, style: this.generator.retro.selection }
+        : { type: 'variation', seed: this.generator.rotation.seed });
+    }
     const sweep = this.generator.sweep;
     const rate = this.generator.rateMotion;
     if (rate && (rate.active || this.reportedRateMoving || this.needsRateReport) && this.generator.frames >= this.nextRateReport) {

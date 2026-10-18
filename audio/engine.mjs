@@ -5,11 +5,13 @@ import { ToneSweep } from './tone-sweep.mjs';
 import { normalizeRateMotion } from './rate-motion.mjs';
 
 export class AudioEngine {
-  constructor(onChange, onMotion = () => {}, onSweep = () => {}, onRate = () => {}) {
+  constructor(onChange, onMotion = () => {}, onSweep = () => {}, onRate = () => {}, onVariation = () => {}, onGardenChoices = () => {}) {
     this.onChange = onChange;
     this.onMotion = onMotion;
     this.onSweep = onSweep;
     this.onRate = onRate;
+    this.onVariation = onVariation;
+    this.onGardenChoices = onGardenChoices;
     this.rateSettings = normalizeRateMotion();
     this.monitorSettings = { highSolo: false };
     this.motionSettings = normalizeMotion();
@@ -67,6 +69,17 @@ export class AudioEngine {
     voice.node.connect(voice.gain).connect(this.sessionGain);
     this.voices.add(voice);
     voice.node.port.onmessage = ({ data }) => {
+      if (data.type === 'garden-choices') {
+        if (voice === this.active && this.playing) this.onGardenChoices(data.description);
+        return;
+      }
+      if (data.type === 'variation') {
+        if (voice === this.active && this.playing) {
+          if (voice.kind === 'retro' && Number.isInteger(data.style) && data.style >= 0 && data.style <= 10) voice.params.style = data.style;
+          this.onVariation(data);
+        }
+        return;
+      }
       if (data.type === 'rate-values') {
         if (voice === this.active && this.playing) this.onRate(data);
         return;

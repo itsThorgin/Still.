@@ -2,6 +2,8 @@ import { GUIDES } from './guides.mjs';
 import { SOLFEGGIO_PITCHES } from './solfeggio.mjs';
 import { RETRO_STYLES } from './retro-styles.mjs';
 import { GARDEN_INFLUENCES } from './garden-influences.mjs';
+import { ARRANGEMENT_OPTIONS, STRING_OPTIONS, VARIATION_OPTIONS } from './garden-options.mjs';
+import { sequencePaletteControl } from './sequence-palettes.mjs';
 
 const carrier = { key: 'base', label: 'Left-ear frequency', unit: 'Hz', min: 60, max: 1000, step: 0.1, scale: 'log', help: 'The tone sent to the left ear.' };
 const difference = { key: 'beat', label: 'Frequency difference', unit: 'Hz', min: 0.5, max: 40, step: 0.1, help: 'The right tone is this much higher than the left tone.' };
@@ -47,25 +49,31 @@ export const PROFILES = [
     { key: 'low', label: 'Lower filter edge', unit: 'Hz', min: 20, max: 3000, step: 1, scale: 'log', help: 'Reduces sound below this frequency. The filter edge is gradual.' },
     { key: 'high', label: 'Upper filter edge', unit: 'Hz', min: 100, max: 12000, step: 1, scale: 'log', help: 'Reduces sound above this frequency. The filter edge is gradual.' },
   ], headphones: false, variation: true, description: 'A continuous noise texture with less high-frequency energy. The filter controls change the sound gradually. Some energy remains outside the selected edges.', how: 'This sound contains many frequencies. The two filter edges shape its range. A new variation changes the noise sequence and keeps your filter settings.', evidence: 'Background sound can make tinnitus less noticeable for some people. This preset is not an individual tinnitus treatment.' },
-  { id: 'gentle-sequence', name: 'Gentle sequence', band: 'TEXTURE', kind: 'sequence', family: 'Textures', type: 'Generated tone sequence', subtitle: 'Small tones, always unfolding', defaults: { low: 180, high: 720, density: 24, length: 7 }, controls: [
+  { id: 'gentle-sequence', name: 'Gentle sequence', band: 'TEXTURE', kind: 'sequence', family: 'Textures', type: 'Generated tone sequence', subtitle: 'Small tones, always unfolding', defaults: { palette: 0, low: 180, high: 720, density: 24, length: 7 }, controls: [
+    sequencePaletteControl('sequence'),
     { key: 'low', label: 'Lowest tone', unit: 'Hz', min: 80, max: 1000, step: 1, scale: 'log', help: 'The lowest main pitch in the sequence.' },
     { key: 'high', label: 'Highest tone', unit: 'Hz', min: 160, max: 3000, step: 1, scale: 'log', help: 'The highest main pitch. Some quieter tones may be higher than this limit.' },
     { key: 'density', label: 'Pace', unit: '/min', min: 6, max: 60, step: 1, help: 'The average number of new tones each minute.' },
     noteLength,
   ], headphones: false, variation: true, description: 'Soft bell-like tones form a changing musical sequence. A small set of musical intervals keeps the sound gentle. Each tone has a smooth start and a long decay.', how: 'Frequency controls set the range of the main pitches. Higher bell harmonics add texture. A new variation changes the order and timing of the notes.', evidence: 'This is an original listening texture inspired by sound-enrichment ideas. This sequence has not been tested as a tinnitus treatment.' },
-  { id: 'soft-plucks', name: 'Soft plucks', band: 'TEXTURE', kind: 'plucks', family: 'Textures', type: 'Generated plucked sequence', subtitle: 'Warm notes in quiet phrases', defaults: { low: 120, high: 480, density: 18, length: 3.5 }, controls: [
+  { id: 'soft-plucks', name: 'Soft plucks', band: 'TEXTURE', kind: 'plucks', family: 'Textures', type: 'Generated plucked sequence', subtitle: 'Warm notes in quiet phrases', defaults: { palette: 0, low: 120, high: 480, density: 18, length: 3.5 }, controls: [
+    sequencePaletteControl('plucks'),
     ...sequenceControls(60, 600, 120, 1600, 6, 40),
     { ...noteLength, max: 8 },
   ], headphones: false, variation: true },
-  { id: 'slow-drift', name: 'Slow drift', band: 'TEXTURE', kind: 'drift', family: 'Textures', type: 'Generated sustained sequence', subtitle: 'Soft layers, slowly overlapping', defaults: { low: 110, high: 440, density: 8, length: 14, overlap: 65 }, controls: [
+  { id: 'slow-drift', name: 'Slow drift', band: 'TEXTURE', kind: 'drift', family: 'Textures', type: 'Generated sustained sequence', subtitle: 'Soft layers, slowly overlapping', defaults: { palette: 0, low: 110, high: 440, density: 8, length: 14, overlap: 65 }, controls: [
+    sequencePaletteControl('drift'),
     ...sequenceControls(55, 440, 110, 1200, 3, 20).map((control) => control.key === 'density' ? { ...control, help: 'The target number of new notes per minute. Lower overlap may reduce the actual pace.' } : control),
     { ...noteLength, min: 4, max: 30 },
     { key: 'overlap', label: 'Overlap', unit: '%', min: 0, max: 100, step: 1, help: 'Higher values allow more notes to play at the same time. At 0%, notes stay separate.' },
   ], headphones: false, variation: true },
   { id: 'chamber-soundscape', name: 'Harmonic garden', band: 'MUSIC', kind: 'soundscape', family: 'Textures', type: 'Evolving musical soundscape', subtitle: 'Interwoven voices, air and shimmer',
-    defaults: { influence: 0, tempo: 56, brightness: 55, music: 80, background: 18, shimmer: 35, width: 55, highMix: 15, highConnection: 50, highLow: 12000, highHigh: 20000, binauralMix: 0, beat: 10 },
+    defaults: { influence: 0, arrangements: 7, strings: 15, variationMinutes: 0, tempo: 56, brightness: 55, music: 80, background: 1, shimmer: 35, width: 66, highMix: 3, highConnection: 70, highLow: 12000, highHigh: 20000, binauralMix: 0, beat: 10 },
     controls: [
-      { key: 'influence', label: 'Musical influence', unit: '', min: 0, max: 7, step: 1, group: 'Music', options: [{ value: 0, label: 'Automatic with each variation' }, ...GARDEN_INFLUENCES], help: 'Choose the main musical influence. Each variation adds a second influence. Changes fade into a new arrangement.' },
+      { key: 'arrangements', label: 'Arrangement choices', unit: '', min: 1, max: 7, step: 1, group: 'Music', options: ARRANGEMENT_OPTIONS, help: 'Each variation picks one selected arrangement. Original and Resonant keep their familiar parts. Seeded ensembles also change the instruments, including organ.' },
+      { key: 'strings', label: 'String sounds', unit: '', min: 0, max: 15, step: 1, group: 'Music', options: STRING_OPTIONS, help: 'Choose which sounds the string parts can use. Follow arrangement uses the normal strings for that arrangement.' },
+      { key: 'variationMinutes', label: 'Automatic new variation', unit: '', min: 0, max: 60, step: 1, group: 'Music', options: VARIATION_OPTIONS, help: 'Change the music after a random time in the shown range. Fade out for 12 seconds, then fade in for 8 seconds. Volume and the listening timer stay the same. Works with Keep this variation on.' },
+      { key: 'influence', label: 'Musical influence', unit: '', min: 0, max: 7, step: 1, group: 'Music', options: [{ value: 0, label: 'Automatic with each variation' }, ...GARDEN_INFLUENCES], help: 'Choose the main writing style. Each variation adds a second style. Automatic lets the seed choose both. Changes fade into the new music.' },
       { key: 'tempo', label: 'Musical pace', unit: '/min', min: 30, max: 90, step: 1, group: 'Music', help: 'The number of musical beats per minute.' },
       { key: 'brightness', label: 'Harmonic brightness', unit: '%', min: 0, max: 100, step: 1, group: 'Music', help: 'Higher values give the musical notes a brighter sound.' },
       { key: 'music', label: 'Music blend', unit: '%', min: 0, max: 100, step: 1, group: 'Music', help: 'The level of the main musical layers.' },
@@ -73,16 +81,17 @@ export const PROFILES = [
       { key: 'shimmer', label: 'Shimmer blend', unit: '%', min: 0, max: 100, step: 1, group: 'Texture', help: 'The level of glassy musical details, separate from the upper layer.' },
       { key: 'width', label: 'Stereo width', unit: '%', min: 0, max: 100, step: 1, group: 'Texture', help: 'How far sounds spread between the left and right channels. Binaural tones remain separate.' },
       { key: 'highMix', label: 'Upper layer blend', unit: '%', min: 0, max: 100, step: 1, group: 'Upper frequencies', help: 'The level of the upper layer. At 0%, this layer is silent.' },
-      { key: 'highConnection', label: 'Musical connection', unit: '%', min: 0, max: 100, step: 1, group: 'Upper frequencies', help: 'At 0%, only floating shimmer plays. At 50%, shimmer and melody are mixed. At 100%, only the supporting melody plays. A narrow frequency range may leave fewer notes or silence.' },
+      { key: 'highConnection', label: 'Musical connection', unit: '%', min: 0, max: 100, step: 1, group: 'Upper frequencies', help: 'Blend floating high tones with a supporting melody. 0% uses only floating tones; 100% uses only melody. A narrow range may leave little or no sound.' },
       { key: 'highLow', label: 'Upper layer lower limit', unit: 'Hz', min: 8000, max: 19999, step: 1, group: 'Upper frequencies', help: 'The lowest frequency for new upper-layer notes. Existing notes fade out when you change the range.' },
       { key: 'highHigh', label: 'Upper layer upper limit', unit: 'Hz', min: 8001, max: 20000, step: 1, group: 'Upper frequencies', help: 'The highest frequency for upper-layer notes, within your audio output\'s limit.' },
       { key: 'binauralMix', label: 'Binaural blend', unit: '%', min: 0, max: 100, step: 1, group: 'Binaural layer', help: 'The level of the binaural tones. At 0%, this layer is off. Use stereo headphones.' },
       { ...difference, group: 'Binaural layer' },
     ], headphones: false, variation: true },
   { id: 'retro-daydream', name: 'Retro daydream', band: 'RETRO', kind: 'retro', family: 'Textures', type: 'Evolving retro music', subtitle: 'Little worlds, new melodies',
-    defaults: { style: 0, tempo: 76, warmth: 65, melody: 75, accompaniment: 55, bass: 60, percussion: 18, ambience: 25, width: 55, drift: 25 },
+    defaults: { style: 0, variationMinutes: 0, tempo: 76, warmth: 65, melody: 15, accompaniment: 55, bass: 80, percussion: 18, ambience: 25, width: 65, drift: 25 },
     controls: [
-      { key: 'style', label: 'Musical character', unit: '', min: 0, max: 5, step: 1, group: 'Music', options: [{ value: 0, label: 'Automatic with each variation' }, ...RETRO_STYLES], help: 'Choose the musical style. Automatic with each variation selects a style automatically. Changes fade into a new arrangement.' },
+      { key: 'style', label: 'Musical character', unit: '', min: 0, max: 10, step: 1, group: 'Music', options: [{ value: 0, label: 'Automatic with each variation' }, ...RETRO_STYLES], help: 'The first five keep their familiar music. The next five add related melodies, lighter chord changes and revised instruments. Automatic chooses from all ten. Changes fade into the next character.' },
+      { key: 'variationMinutes', label: 'Automatic character change', unit: '', min: 0, max: 60, step: 1, group: 'Music', options: VARIATION_OPTIONS.map((option) => option.value ? option : { value: 0, label: 'Off: keep this character' }), help: 'Choose a different character from all ten after a random time in the shown range. Fade out for 12 seconds, then fade in for 8 seconds. The picker shows the new character. Volume, layer levels and the listening timer stay the same. Works with Keep this variation on. Off keeps the current character developing.' },
       { key: 'tempo', label: 'Musical pace', unit: '/min', min: 40, max: 110, step: 1, group: 'Music', help: 'The number of musical beats per minute.' },
       { key: 'melody', label: 'Melody blend', unit: '%', min: 0, max: 100, step: 1, group: 'Music', help: 'The level of the main melody and answering notes.' },
       { key: 'accompaniment', label: 'Accompaniment blend', unit: '%', min: 0, max: 100, step: 1, group: 'Music', help: 'The level of chords and repeating note patterns behind the melody.' },

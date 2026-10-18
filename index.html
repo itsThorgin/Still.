@@ -38,13 +38,17 @@
 
         <div class="listening-card">
           <div class="card-topline"><span class="band-label" id="band-label">GAMMA / 40 HZ</span><span class="output-label" id="output-label">Stereo headphones</span></div>
+          <div class="garden-choices" id="garden-choices" hidden>
+            <p id="garden-choice-summary" role="status" aria-live="polite" aria-atomic="true"></p>
+            <details id="garden-instruments"><summary>Show instruments</summary><dl id="garden-parts"></dl><p>Parts can enter, rest or alternate throughout this variation. Keep this variation reuses the current seed. Arrangement choices and String sounds control future choices.</p></details>
+          </div>
           <div class="signal" aria-hidden="true"><div class="signal-grid"></div><svg class="signal-svg" viewBox="0 0 900 160" preserveAspectRatio="none"><path id="wave-secondary" class="wave-secondary"/><path id="wave-primary" class="wave-primary"/></svg><span class="signal-label">SIGNAL PREVIEW</span></div>
           <div class="signal-readouts" id="signal-readouts"></div>
           <div class="transport"><div class="playback-status"><span class="playback-dot" id="playback-dot"></span><div><p id="playback-label">Ready</p><span id="playback-detail">Continuous listening</span></div></div><button type="button" class="play-button" id="play-button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 11 7-11 7V5Z" fill="currentColor"/></svg><span>Start listening</span></button><div class="clock-box"><strong id="clock">∞</strong><span id="clock-label">NO TIME LIMIT</span></div></div>
           <div class="variation-row" id="variation-row" hidden>
             <span><span class="tiny-spark" aria-hidden="true">✧</span>Variation <strong id="variation-id">001</strong></span>
             <div><label class="lock-label"><input type="checkbox" id="lock-variation" aria-describedby="variation-help">Keep this variation</label><button type="button" class="quiet-button compact-button" id="new-variation">New variation <span aria-hidden="true">↻</span></button></div>
-            <p id="variation-help">Reuse this variation the next time you listen. Current playback continues unchanged. Restarting playback begins the variation again.</p>
+            <p id="variation-help">Reuse this variation the next time you listen. Checking this keeps playback going. Restarting begins the variation again. Automatic changes in Harmonic garden and Retro daydream continue when enabled.</p>
           </div>
         </div>
 

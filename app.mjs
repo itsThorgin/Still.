@@ -6,6 +6,7 @@ import { ToneSweep, toneLimit, GLIDE_SECONDS } from './audio/tone-sweep.mjs';
 import { normalizeRateMotion, rateBand, RATE_SECONDS } from './audio/rate-motion.mjs';
 import { retroStyle } from './retro-styles.mjs';
 import { gardenInfluences } from './garden-influences.mjs';
+import { SEQUENCE_SOUNDS, sequencePalette } from './sequence-palettes.mjs';
 
 const $ = (id) => document.getElementById(id);
 let state;
@@ -21,6 +22,8 @@ let liveRateMoving = false;
 let highSolo = false;
 let liveSweep = null;
 let scanResult = null;
+let gardenReport = null;
+let renderedGardenReport = null;
 const controls = new Map();
 
 const icons = {
@@ -67,6 +70,21 @@ const engine = new AudioEngine(({ playing, message }) => {
   liveRateMoving = moving;
   syncParameters(undefined, true);
   renderRateMotion();
+  renderSoundSummary(false);
+}, ({ seed, style }) => {
+  const kind = getProfile(state.profileId).kind;
+  if (!['soundscape', 'retro'].includes(kind) || !Number.isInteger(seed) || seed <= 0 || seed > 0xffffffff) return;
+  if (kind === 'retro') {
+    if (!Number.isInteger(style) || style < 0 || style > 10) return;
+    state.params.style = style;
+    syncParameters();
+  }
+  state.seed = seed; variationNumber++;
+  $('variation-id').textContent = String(variationNumber).padStart(3, '0');
+  renderSoundSummary(); save();
+}, (description) => {
+  if (getProfile(state.profileId).kind !== 'soundscape') return;
+  gardenReport = description;
   renderSoundSummary(false);
 });
 engine.setRateMotion(state.rateMotion);
@@ -136,6 +154,7 @@ function selectProfile(id) {
   const profile = getProfile(id);
   state.profileId = id;
   state.params = { ...profile.defaults };
+  gardenReport = null;
   highSolo = false;
   liveRateMoving = false;
   engine.setMonitor({ highSolo });
@@ -209,7 +228,8 @@ function renderParameters() {
         item.textContent = control.unit ? `${option.value} ${control.unit} · ${option.label}` : option.label; select.append(item);
       }
       const help = document.createElement('p'); help.id = `help-${control.key}`;
-      help.className = 'parameter-option-help'; help.textContent = control.help;
+      help.className = ['sequence', 'plucks', 'drift', 'soundscape', 'retro'].includes(profile.kind) ? 'sr-only' : 'parameter-option-help';
+      help.textContent = control.help;
       select.addEventListener('change', () => updateParameter(control.key, Number(select.value)));
       row.append(label, select, help); container.append(row);
       controls.set(control.key, { control, select });
@@ -264,6 +284,7 @@ function updateParameter(key, value, editingInput) {
   scanResult = null;
   if (liveSweep) { liveSweep = null; liveParams = null; }
   state.params = normalizeParams(profile, { ...state.params, [key]: value }, key);
+  if (!engine.playing && ['influence', 'arrangements', 'strings'].includes(key)) gardenReport = null;
   syncParameters(editingInput, false, key);
   engine.setParams(state.params);
   renderMotion();
@@ -407,6 +428,35 @@ function formatFrequency(value) {
   return Number(value.toFixed(1)).toLocaleString('en-US', { maximumFractionDigits: 1 });
 }
 
+function renderGardenChoices() {
+  const panel = $('garden-choices');
+  panel.hidden = getProfile(state.profileId).kind !== 'soundscape';
+  if (panel.hidden) return;
+  const report = gardenReport;
+  const summary = $('garden-choice-summary');
+  $('garden-instruments').hidden = !report;
+  if (!report) {
+    const text = engine.playing ? 'Choosing instruments…' : 'Start listening to see the chosen instruments and string sounds.';
+    if (summary.textContent !== text) summary.textContent = text;
+    renderedGardenReport = null;
+    return;
+  }
+  const arrangement = report.arrangement.value === 4 ? 'Seeded ensemble' : `${report.arrangement.label} arrangement`;
+  const lead = report.arrangement.value === 4 ? report.parts.find((part) => part.role === 'lead')?.choices[0]?.instrumentLabel : null;
+  const strings = report.stringSounds.length === 1 ? `Strings: ${report.stringSounds[0]}` : report.stringSounds.length ? 'Mixed strings' : 'No strings';
+  const text = `${engine.playing ? '' : 'Last played · '}${[arrangement, lead ? `${lead} lead` : null, strings].filter(Boolean).join(' · ')}`;
+  if (summary.textContent !== text) summary.textContent = text;
+  if (renderedGardenReport === report) return;
+  renderedGardenReport = report;
+  $('garden-parts').replaceChildren();
+  for (const part of report.parts) {
+    const role = document.createElement('dt'); role.textContent = part.label;
+    const sounds = document.createElement('dd');
+    sounds.textContent = part.choices.map((choice) => `${choice.instrumentLabel}${choice.sound ? ` · ${choice.sound}` : ''}`).join('; ');
+    $('garden-parts').append(role, sounds);
+  }
+}
+
 function renderSoundSummary(draw = true) {
   const profile = getProfile(state.profileId);
   const p = engine.playing && liveParams ? liveParams : state.params;
@@ -426,9 +476,11 @@ function renderSoundSummary(draw = true) {
     item.append(number, text); $('signal-readouts').append(item);
   }
   $('band-label').textContent = `${p.beat ? rhythmBand(p.beat) : profile.band} / ${p.beat ? `${formatFrequency(p.beat)} HZ` : profile.kind === 'tone' ? 'STEADY TONE' : 'GENERATED SOUND'}`;
-  if (profile.kind === 'soundscape') $('band-label').textContent = highSolo ? 'MUSIC / UPPER LAYER ALONE' : `GARDEN / ${gardenInfluences(state.seed, state.params.influence).map((item) => item.label.toUpperCase()).join(' + ')}`;
+  if (profile.kind === 'soundscape') $('band-label').textContent = highSolo ? 'MUSIC / UPPER LAYER ALONE' : `GARDEN / ${(gardenReport?.influences ?? gardenInfluences(state.seed, state.params.influence)).map((item) => item.label.toUpperCase()).join(' + ')}`;
   if (profile.kind === 'retro') $('band-label').textContent = `RETRO / ${retroStyle(state.params.style, state.seed).label.toUpperCase()}`;
+  if (SEQUENCE_SOUNDS[profile.kind]) $('band-label').textContent = `TEXTURE / ${sequencePalette(profile.kind, state.seed, state.params.palette).label.toUpperCase()}`;
   $('output-label').textContent = profile.headphones || (profile.kind === 'soundscape' && state.params.binauralMix > 0) ? 'Stereo headphones' : 'Speakers or headphones';
+  renderGardenChoices();
   if (draw) drawSignal();
 }
 
@@ -544,6 +596,7 @@ $('play-button').addEventListener('click', async () => {
   if (busy) return;
   if (engine.playing) { engine.stop(); return; }
   busy = true;
+  gardenReport = null;
   showNotice('');
   renderPlayback();
   try {
@@ -569,6 +622,7 @@ $('reset-button').addEventListener('click', () => {
   scanResult = null;
   if (liveSweep) { liveSweep = null; liveParams = null; }
   state.params = { ...getProfile(state.profileId).defaults };
+  if (!engine.playing) gardenReport = null;
   highSolo = false; engine.setMonitor({ highSolo });
   engine.setParams(state.params);
   syncParameters(); renderMotion(); renderRateMotion(); renderSoundscapeTools(); renderPlayback(); renderSoundSummary(); save();
@@ -578,6 +632,7 @@ $('return-start').addEventListener('click', () => startToneSweep('return'));
 $('sweep-stop').addEventListener('click', () => engine.stop('Stopped. The displayed pitch is now selected.'));
 $('new-variation').addEventListener('click', () => {
   state.seed = randomSeed(); variationNumber++;
+  gardenReport = null;
   liveParams = null; liveMoving = false; liveRateMoving = false;
   engine.changeProfile(getProfile(state.profileId), state.params, state.seed);
   syncParameters(); renderSoundSummary(); renderRateMotion();

@@ -1,8 +1,10 @@
 import { gardenInfluences } from '../garden-influences.mjs';
+import { GardenEnsemble } from './garden-ensemble.mjs';
+import { chooseArrangement, chooseString } from '../garden-options.mjs';
 
 // Original composition rules using selected traits, not composer impersonations.
 export class GardenPlan {
-  constructor(base, seed, selection = 0) {
+  constructor(base, seed, selection = 0, options = {}) {
     this.base = base;
     this.tonic = base.tonic; this.scale = base.scale;
     this.progression = base.progression; this.motif = base.motif;
@@ -10,22 +12,34 @@ export class GardenPlan {
     this.primary = this.influences[0].value;
     this.secondary = this.influences[1].value;
     this.barSteps = this.primary === 6 ? 6 : 8;
+    this.ensemble = new GardenEnsemble(seed, this.primary, this.secondary);
+    this.seed = seed; this.stringPool = options.strings ?? 0;
+    this.arrangement = chooseArrangement(seed, options.arrangements ?? 4);
   }
 
   frequency(degree, octave = 0) { return this.base.frequency(degree, octave); }
   chordAt(bar) { return this.progression[bar % this.progression.length]; }
 
   events(step) {
+    const score = this.scoreEvents(step);
+    const notes = this.arrangement.value === 4 ? this.ensemble.arrange(score, step, this)
+      : score.map((event) => ({ ...event, palette: this.arrangement.value === 1 ? 'original' : 'resonant' }));
+    return notes.map((event) => ['string', 'cello', 'violin'].includes(event.instrument)
+      ? { ...event, stringStyle: chooseString(this.seed, this.stringPool, event.role, event.frequency) } : event);
+  }
+
+  scoreEvents(step) {
     const bar = Math.floor(step / this.barSteps), position = step % this.barSteps;
     const chord = this.chordAt(bar), phrase = Math.floor(bar / 4), cadence = bar % 4 === 3;
     const has = (id) => this.primary === id || this.secondary === id;
     const events = [];
     const add = (degree, octave, beats, instrument, amplitude, pan, delay = 0) => {
-      const note = { frequency: this.frequency(chord + degree, octave), beats, instrument, amplitude, pan, delay };
+      const note = { frequency: this.frequency(chord + degree, octave), beats, instrument, amplitude, pan, delay,
+        role: instrument === 'flute' || (instrument === 'string' && pan > 0) ? 'answer' : 'accompaniment' };
       events.push(note); return note;
     };
     const piano = has(5);
-    if (position === 0) add(0, 0, this.primary === 6 ? 2.8 : 4.5, 'string', 0.025, -0.12);
+    if (position === 0) add(0, 0, this.primary === 6 ? 2.8 : 4.5, 'string', 0.025, -0.12).role = 'bass';
 
     // A three-beat bass/chord sway gives Smetana's character a different metre.
     if (this.primary === 6) {
@@ -58,7 +72,7 @@ export class GardenPlan {
     }
     if (this.primary === 6) { degree = this.motif[(position + Math.floor(bar / 2)) % 8]; beats = position % 2 ? 0.8 : 1.3; }
     if (this.primary === 7) { lead = position % 2 === 0; beats = 1.2; degree = this.motif[(position + phrase) % 8]; }
-    if (lead) add(degree, 1, beats, piano ? 'piano' : phrase % 2 ? 'flute' : 'string', 0.028, 0.2, piano && position === 0 ? 0.06 : 0);
+    if (lead) add(degree, 1, beats, piano ? 'piano' : phrase % 2 ? 'flute' : 'string', 0.028, 0.2, piano && position === 0 ? 0.06 : 0).role = 'lead';
 
     if (has(1) && position >= 2 && position % 2 === 0) {
       const echo = this.motif[(position - 2) % 8] + 2;
@@ -76,7 +90,10 @@ export class GardenPlan {
     if (has(7) && position === this.barSteps - 3 && bar % 2 === 0) {
       for (let index = 0; index < 3; index++) add(degree + index, 1, 0.5, 'pluck', this.primary === 7 ? 0.018 : 0.011, 0.35, index / 6);
     }
-    if (position === 0) add(degree, 2, 2.6, 'glass', 0.015, 0.1).shimmer = true;
+    if (position === 0) {
+      const accent = add(degree, 2, 2.6, 'glass', 0.015, 0.1);
+      accent.shimmer = true; accent.role = 'accent';
+    }
     return events;
   }
 }

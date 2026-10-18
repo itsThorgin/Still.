@@ -1,5 +1,7 @@
 import { SeededRandom } from './soundscape.mjs';
 import { RetroPlan } from './retro-plan.mjs';
+import { createClearRetroTone, sampleClearRetroTone, createClearRetroDrum, sampleClearRetroDrum } from './retro-clear.mjs';
+import { mixRetroSeed } from '../retro-styles.mjs';
 
 const TAU = 2 * Math.PI;
 const SIZE = 2048;
@@ -44,6 +46,7 @@ export class RetroSoundscape {
     this.seed = seed;
     this.selection = this.requestedStyle = params.style;
     this.plan = new RetroPlan(seed, params.style);
+    this.noteSerial = 0;
     this.voices = [];
     this.drums = [];
     this.beats = 0;
@@ -87,6 +90,7 @@ export class RetroSoundscape {
     if (this.transition?.phase === 'out' && frame >= this.transition.start + this.sampleRate) {
       this.selection = this.requestedStyle;
       this.plan = new RetroPlan(this.seed, this.selection);
+      this.noteSerial = 0;
       // Remove sounding and pending notes, percussion and filtered room tails at silence.
       this.voices.length = this.drums.length = 0;
       this.roomLeft.fill(0); this.roomRight.fill(0);
@@ -103,14 +107,18 @@ export class RetroSoundscape {
     const duration = event.beats * 60 / tempo;
     const age = -Math.round((event.delay ?? 0) * 60 / tempo * this.sampleRate);
     if (event.drum) {
-      if (this.drums.length < 8) this.drums.push({ ...event, phase: 0, age, duration });
+      if (this.drums.length < 8) this.drums.push({ ...event, phase: 0, age, duration,
+        clear: this.plan.style.sound === 'clear' ? createClearRetroDrum(this.sampleRate) : null });
       return;
     }
-    if (this.voices.length >= 28 || event.frequency * 1.003 >= this.sampleRate * 0.45) return;
-    const safe = this.sampleRate * 0.45 / (event.frequency * 1.003);
+    const clear = this.plan.style.sound === 'clear';
+    const headroom = clear ? 1.005 : 1.003;
+    if (this.voices.length >= 28 || event.frequency * headroom >= this.sampleRate * 0.45) return;
+    const safe = this.sampleRate * 0.45 / (event.frequency * headroom);
     const harmonics = HARMONICS.filter((count) => count <= safe).at(-1);
     const fundamental = ['triangle', 'pluck', 'keys'].includes(event.instrument) ? SINE : COSINE;
-    this.voices.push({ ...event, duration, phase: 0, age, retire: Infinity, fundamental, harmonics, table: TABLES.get(`${event.instrument}:${harmonics}`) });
+    this.voices.push({ ...event, duration, phase: 0, age, retire: Infinity, fundamental, harmonics, table: TABLES.get(`${event.instrument}:${harmonics}`),
+      clear: clear ? createClearRetroTone(event.instrument, event.frequency, this.sampleRate, mixRetroSeed(this.seed ^ this.noteSerial++)) : null });
   }
 
   sample(params, frame) {
@@ -144,10 +152,11 @@ export class RetroSoundscape {
       const release = Math.min(1, (voice.duration - age) / Math.min(0.3, voice.duration * 0.4));
       let envelope = attack * attack * (3 - 2 * attack) * release * release * (3 - 2 * release);
       envelope *= Math.min(1, (voice.retire - frame) / (sr * 0.25));
-      if (voice.instrument === 'pluck') envelope *= Math.exp(-age / voice.duration * 4);
-      if (voice.instrument === 'keys') envelope *= Math.exp(-age / voice.duration * 2);
+      if (!voice.clear && voice.instrument === 'pluck') envelope *= Math.exp(-age / voice.duration * 4);
+      if (!voice.clear && voice.instrument === 'keys') envelope *= Math.exp(-age / voice.duration * 2);
       const fundamental = lookup(voice.fundamental, voice.phase);
-      const wave = lookup(voice.table, voice.phase) * (1 - warmth * 0.5) + fundamental * warmth * 0.5;
+      const wave = voice.clear ? sampleClearRetroTone(voice.clear, voice.phase, age, voice.duration, pitch, warmth)
+        : lookup(voice.table, voice.phase) * (1 - warmth * 0.5) + fundamental * warmth * 0.5;
       const level = params[voice.role] / 100;
       const sound = wave * envelope * voice.amplitude * level;
       const pan = clamp((voice.pan + (voice.role === 'bass' ? 0 : this.sway)) * width, -0.8, 0.8);
@@ -170,8 +179,9 @@ export class RetroSoundscape {
       if (voice.drum === 'kick') wave = lookup(SINE, voice.phase);
       else if (voice.drum === 'snare') wave = wave * 0.75 + lookup(SINE, voice.phase) * 0.25;
       else wave = noise - this.drumLow;
+      if (voice.clear) wave = sampleClearRetroDrum(voice, noise, lookup(SINE, voice.phase));
       drums += wave * envelope * voice.amplitude * params.percussion / 100;
-      const frequency = voice.drum === 'kick' ? 48 + 45 * Math.exp(-age * 25) : 175;
+      const frequency = voice.drum === 'kick' ? voice.clear ? 46 + 82 * Math.exp(-age * 28) : 48 + 45 * Math.exp(-age * 25) : 175;
       voice.phase = (voice.phase + frequency / sr) % 1;
       voice.age++;
     }

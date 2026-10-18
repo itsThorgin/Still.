@@ -1,18 +1,12 @@
 import { GardenPlan } from './garden-plan.mjs';
+import { createGardenTone, sampleGardenTone, prepareGardenPlan, gardenPlanPreparations } from './garden-instruments.mjs';
+import { OrganRoom } from './garden-organ.mjs';
 
 const TAU = Math.PI * 2;
 const TABLE_SIZE = 4096;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const smooth = (value) => value ** 3 * (10 + value * (-15 + value * 6));
 const SINE = Float32Array.from({ length: TABLE_SIZE + 1 }, (_, index) => Math.sin(TAU * index / TABLE_SIZE));
-const TABLES = new Map();
-const INSTRUMENTS = {
-  string: [1, 0.38, 0.2, 0.1, 0.05, 0.025],
-  flute: [1, 0.13, 0.23, 0.035, 0.04, 0],
-  pluck: [1, 0.3, 0.15, 0.075, 0.03, 0.015],
-  glass: [1, 0.07, 0.35, 0.02, 0.12, 0.015],
-  piano: [1, 0.44, 0.2, 0.09, 0.06, 0.02],
-};
 const UPPER_RHYTHMS = [
   [[1, 1.25], [4, 1], [6, 0.85]],
   [[0, 2.1], [5, 1.15]],
@@ -24,25 +18,6 @@ function lookup(table, phase) {
   const position = phase * TABLE_SIZE;
   const index = Math.floor(position);
   return table[index] + (table[index + 1] - table[index]) * (position - index);
-}
-
-function harmonicTable(instrument, harmonics) {
-  const key = `${instrument}:${harmonics}`;
-  if (!TABLES.has(key)) {
-    const weights = INSTRUMENTS[instrument];
-    const scale = weights.reduce((sum, value) => sum + value, 0);
-    const table = new Float32Array(TABLE_SIZE + 1);
-    for (let index = 0; index <= TABLE_SIZE; index++) {
-      for (let harmonic = 1; harmonic <= harmonics; harmonic++) table[index] += weights[harmonic - 1] * Math.sin(TAU * harmonic * index / TABLE_SIZE) / scale;
-    }
-    TABLES.set(key, table);
-  }
-  return TABLES.get(key);
-}
-
-// Build lookup tables during module loading, before audio rendering starts.
-for (const instrument of Object.keys(INSTRUMENTS)) {
-  for (let harmonics = 1; harmonics <= 6; harmonics++) harmonicTable(instrument, harmonics);
 }
 
 export class SeededRandom {
@@ -139,16 +114,20 @@ export class UpperMelodyPlan {
 }
 
 export class ChamberSoundscape {
-  constructor(sampleRate, params, seed) {
+  constructor(sampleRate, params, seed, deferPreparation = false) {
     this.sampleRate = sampleRate;
     this.limit = Math.min(20000, Math.floor(sampleRate / 2) - 1);
     this.seed = seed;
     this.selection = this.requestedInfluence = params.influence ?? 0;
-    this.plan = new GardenPlan(new ChamberPlan(seed), seed, this.selection);
+    this.planOptions = { arrangements: params.arrangements, strings: params.strings };
+    this.plan = new GardenPlan(new ChamberPlan(seed), seed, this.selection, this.planOptions);
+    if (deferPreparation) this.preparations = gardenPlanPreparations(this.plan, sampleRate);
+    else prepareGardenPlan(this.plan, sampleRate);
     this.nextStepBeat = 0;
     this.transition = null;
     this.upperPlan = new UpperMelodyPlan(this.plan, seed);
     this.textureRandom = new SeededRandom(seed ^ 0x165667b1);
+    this.instrumentRandom = new SeededRandom(seed ^ 0x85ebca6b);
     this.highRandom = new SeededRandom(seed ^ 0xd3a2646c);
     this.noiseRandom = new SeededRandom(seed ^ 0xfd7046c5);
     this.voices = [];
@@ -170,6 +149,7 @@ export class ChamberSoundscape {
     this.smoothing = 1 - Math.exp(-1 / (sampleRate * 0.05));
     this.roomLeft = new Float32Array(Math.ceil(sampleRate * 0.173));
     this.roomRight = new Float32Array(Math.ceil(sampleRate * 0.239));
+    this.organRoom = this.plan.arrangement.value === 4 && Object.values(this.plan.ensemble.parts).includes('organ') ? new OrganRoom(sampleRate) : null;
     this.left = this.right = 0;
   }
 
@@ -177,8 +157,9 @@ export class ChamberSoundscape {
 
   setParams(params, frame) {
     const requested = params.influence ?? 0;
-    if (requested !== this.requestedInfluence) {
+    if (requested !== this.requestedInfluence || params.arrangements !== this.planOptions.arrangements || params.strings !== this.planOptions.strings) {
       this.requestedInfluence = requested;
+      this.planOptions = { arrangements: params.arrangements, strings: params.strings };
       // During fade-out, only replace the pending choice. Do not extend the fade.
       if (this.transition?.phase !== 'out') {
         this.transition = { phase: 'out', start: frame, from: this.influenceGain(frame) };
@@ -202,11 +183,13 @@ export class ChamberSoundscape {
   advanceInfluence(frame) {
     if (this.transition?.phase === 'out' && frame >= this.transition.start + this.sampleRate) {
       this.selection = this.requestedInfluence;
-      this.plan = new GardenPlan(new ChamberPlan(this.seed), this.seed, this.selection);
+      this.plan = new GardenPlan(new ChamberPlan(this.seed), this.seed, this.selection, this.planOptions);
+      prepareGardenPlan(this.plan, this.sampleRate);
       this.upperPlan = new UpperMelodyPlan(this.plan, this.seed);
       // Clear every outgoing pitched layer and its room tail while gain is zero.
       this.voices.length = this.highVoices.length = this.melodyVoices.length = 0;
       this.roomLeft.fill(0); this.roomRight.fill(0);
+      this.organRoom?.clear();
       this.step = 0;
       this.nextStepBeat = this.beats;
       this.nextHigh = this.nextMelody = frame;
@@ -219,8 +202,9 @@ export class ChamberSoundscape {
   addNote(event, tempo) {
     if (this.voices.length >= 20 || event.frequency >= this.sampleRate * 0.45) return;
     const duration = event.beats * 60 / tempo;
-    const harmonics = Math.min(6, Math.floor(this.sampleRate * 0.45 / event.frequency));
-    this.voices.push({ ...event, phase: 0, age: -Math.round((event.delay ?? 0) * 60 / tempo * this.sampleRate), duration, retire: Infinity, table: harmonicTable(event.instrument, harmonics), drift: this.textureRandom.next() * 0.2 - 0.1 });
+    if (event.instrument === 'organ' && !this.organRoom) this.organRoom = new OrganRoom(this.sampleRate);
+    const tone = createGardenTone(event.instrument, event.frequency, duration, this.sampleRate, Math.floor(this.instrumentRandom.next() * 4294967296), event);
+    this.voices.push({ ...event, tone, phase: 0, age: -Math.round((event.delay ?? 0) * 60 / tempo * this.sampleRate), duration, retire: Infinity, drift: this.textureRandom.next() * 0.2 - 0.1 });
   }
 
   addHighCluster(params, frame) {
@@ -266,29 +250,34 @@ export class ChamberSoundscape {
     }
     this.beats += params.tempo / (60 * sr);
     if (frame >= this.nextHigh) this.addHighCluster(params, frame);
-    let musicLeft = 0, musicRight = 0;
+    let musicLeft = 0, musicRight = 0, organLeft = 0, organRight = 0;
     const width = params.width / 100;
     for (let index = this.voices.length - 1; index >= 0; index--) {
       const voice = this.voices[index];
       const age = voice.age / sr;
       if (age >= voice.duration || frame >= voice.retire) { this.voices.splice(index, 1); continue; }
       if (age < 0) { voice.age++; continue; }
-      const attack = Math.min(1, age / (voice.instrument === 'string' ? 0.22 : voice.instrument === 'piano' ? 0.025 : 0.07));
-      const release = Math.min(1, (voice.duration - age) / Math.min(0.7, voice.duration * 0.4));
+      const attack = Math.min(1, age / Math.min(voice.tone.attack, voice.duration * 0.3));
+      const release = Math.min(1, (voice.duration - age) / Math.min(voice.tone.release ?? 0.7, voice.duration * 0.4));
       let envelope = attack * attack * (3 - 2 * attack) * release * release * (3 - 2 * release);
+      if (voice.tone.internalEnvelope) envelope = 1;
       envelope *= Math.min(1, (voice.retire - frame) / (sr * 0.25));
-      if (voice.instrument === 'piano') envelope *= Math.exp(-age / voice.duration * 2);
-      if (voice.instrument === 'pluck' || voice.shimmer) envelope *= Math.exp(-age / voice.duration * (voice.shimmer ? 3 : 4));
-      const sine = lookup(SINE, voice.phase);
-      const bright = lookup(voice.table, voice.phase);
-      const wave = sine + (bright - sine) * (voice.shimmer ? 0.8 : this.colour);
+      const wave = sampleGardenTone(voice.tone, age, voice.shimmer ? 0.8 : this.colour);
       const blend = (voice.shimmer ? params.shimmer : params.music) / 100;
       const sound = wave * envelope * voice.amplitude * blend;
       const pan = clamp((voice.pan + voice.drift + this.sway) * width, -0.85, 0.85);
       musicLeft += sound * (1 - pan) * Math.SQRT1_2;
       musicRight += sound * (1 + pan) * Math.SQRT1_2;
+      if (voice.instrument === 'organ') {
+        organLeft += sound * (1 - pan) * Math.SQRT1_2;
+        organRight += sound * (1 + pan) * Math.SQRT1_2;
+      }
       voice.phase = (voice.phase + voice.frequency / sr) % 1;
       voice.age++;
+    }
+    if (this.organRoom) {
+      this.organRoom.sample(organLeft, organRight);
+      musicLeft += this.organRoom.left; musicRight += this.organRoom.right;
     }
     let upperLeft = 0, upperRight = 0;
     const connection = (params.highConnection ?? 0) / 100;
