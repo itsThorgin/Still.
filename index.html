@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111411">
-  <meta name="description" content="A quiet sound studio. Generate continuous tones and textures on your own device.">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#070e1d">
+  <meta name="description" content="Your space to listen. Original music, tones and textures generated on your device.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
-  <title>Still | Local sound studio</title>
-  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <title>Still | Your space to listen</title>
+  <link rel="icon" href="./icon.svg?v=midnight-dark" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./split-studio.css?v=midnight-alignment-2">
   <script type="module" src="./app.mjs"></script>
 </head>
 <body>
@@ -16,66 +17,65 @@
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="./" aria-label="Still home"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 18v-4m5 10V8m6 20V4m6 20V8m5 10v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Still<span class="brand-period">.</span></span></a>
-      <div class="topbar-caption"><span>A cozy space to listen..</span><span class="topbar-credit">Made with not so much ❤️ by Thorgin © 2026</span></div>
-      <div class="local-badge"><span class="status-dot"></span>Runs on your device</div>
+      <button type="button" id="library-open" class="library-trigger" aria-haspopup="dialog" aria-controls="sound-picker"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Choose a sound</span><span aria-hidden="true">⌄</span></button>
+      <button type="button" id="timer-open" class="timer-trigger" aria-haspopup="dialog" aria-controls="timer-dialog"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z"/></svg><span class="clock-box"><strong id="clock">∞</strong><span id="clock-label" class="sr-only">NO TIME LIMIT</span></span><span class="timer-trigger-label">Timer</span></button>
     </header>
-
-    <main class="workspace">
-      <aside class="library" aria-label="Sound library">
-        <div class="library-heading"><div><p class="eyebrow">YOUR SOUND SPACE</p><h1>Find your frequency.</h1></div><span class="library-count" id="profile-count">20</span></div>
-        <div class="filter-row" role="group" aria-label="Filter sounds">
-          <button type="button" class="filter active" data-filter="All" aria-pressed="true">All</button>
-          <button type="button" class="filter" data-filter="Beats" aria-pressed="false">Beats</button>
-          <button type="button" class="filter" data-filter="Pulses" aria-pressed="false">Pulses</button>
-          <button type="button" class="filter" data-filter="Textures" aria-pressed="false">Textures</button>
-        </div>
-        <div class="profile-list" id="profile-list"></div>
-        <div class="library-foot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v6c0 4 7 9 7 9s7-5 7-9V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg><p>Made here, heard here.<br><span>No accounts. No audio uploads.</span></p></div>
-      </aside>
-
-      <section class="studio" id="player" aria-label="Sound player">
-        <div class="studio-title"><div><p class="eyebrow">NOW CHOSEN</p><div class="title-line"><h2 id="profile-name">Low gamma</h2><span class="modified-tag" id="modified-tag" hidden>Modified</span></div><p class="profile-subtitle" id="profile-type">Binaural beats</p></div><button type="button" class="quiet-button about-button" id="about-button"><span class="info-mark">i</span>About this sound</button></div>
-
-        <div class="listening-card">
-          <div class="card-topline"><span class="band-label" id="band-label">GAMMA / 40 HZ</span><span class="output-label" id="output-label">Stereo headphones</span></div>
-          <div class="garden-choices" id="garden-choices" hidden>
+    <main class="workspace" id="player">
+      <section class="studio" aria-label="Sound player">
+        <div class="listening-panel">
+        <div class="listening-heading"><span id="cover-label">still / your sound</span><div class="playback-status" role="status" aria-live="polite"><span class="playback-dot" id="playback-dot"></span><div><p id="playback-label">Ready</p><span id="playback-detail">Continuous listening</span></div></div></div>
+        <div class="studio-title"><div class="title-line"><h1 id="profile-name">Low gamma</h1><span class="modified-tag" id="modified-tag" hidden>Modified</span></div><p class="profile-subtitle" id="profile-type">Binaural beats</p><div class="sound-meta"><span class="band-label" id="band-label">GAMMA / 40 HZ</span><button type="button" class="about-button" id="about-button" aria-label="About this sound"><span class="info-mark" aria-hidden="true">i</span> About</button></div></div>
+        <div class="focus-art" id="audio-artwork" aria-hidden="true"><div class="signal"><svg class="signal-svg" viewBox="0 0 900 320" preserveAspectRatio="none"><path class="wave-guide" d="M0 115.2H900M0 160H900M0 204.8H900"/><path id="wave-primary" class="wave-low"/><path id="wave-secondary" class="wave-mid"/><path id="wave-high" class="wave-high"/></svg></div><span class="wire-label wire-high-label">Highs</span><span class="wire-label wire-mid-label">Mids</span><span class="wire-label wire-low-label">Lows</span></div>
+        <div class="transport"><button type="button" class="play-button" id="play-button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 11 7-11 7V5Z" fill="currentColor"/></svg><span>Start listening</span></button><button type="button" class="quick-variation" id="quick-new-variation" aria-label="New variation" title="New variation" hidden><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7h3c5 0 7 10 12 10h3m-4-4 4 4-4 4M3 17h3c2 0 3-1 5-4m3-2c1-2 3-4 5-4h2m-4-4 4 4-4 4"/></svg></button></div>
+        <section class="volume-panel" aria-labelledby="volume-title"><button type="button" class="mute-button" id="mute-button" aria-label="Mute sound" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="sound-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/><path class="mute-cross" d="m16 9 6 6m0-6-6 6"/></svg></button><div class="volume-label"><h3 id="volume-title">Volume</h3><span id="volume-hint">Start quietly.</span></div><input type="range" id="volume-slider" min="0.01" max="100" step="0.01" value="1" aria-label="Volume percentage"><div class="number-field volume-number"><input type="number" id="volume-number" min="0.01" max="100" step="0.01" value="1.00" aria-label="Exact volume percentage" inputmode="decimal"><span>%</span></div></section>
+        <div class="signal-readouts" id="signal-readouts" aria-label="Current sound values"></div>
+        <p class="output-label" id="output-label">Stereo headphones</p>
+        <div class="garden-choices" id="garden-choices" hidden>
             <p id="garden-choice-summary" role="status" aria-live="polite" aria-atomic="true"></p>
             <details id="garden-instruments"><summary>Show instruments</summary><dl id="garden-parts"></dl><p>Parts can enter, rest or alternate throughout this variation. Keep this variation reuses the current seed. Arrangement choices and String sounds control future choices.</p></details>
           </div>
-          <div class="signal" aria-hidden="true"><div class="signal-grid"></div><svg class="signal-svg" viewBox="0 0 900 160" preserveAspectRatio="none"><path id="wave-secondary" class="wave-secondary"/><path id="wave-primary" class="wave-primary"/></svg><span class="signal-label">SIGNAL PREVIEW</span></div>
-          <div class="signal-readouts" id="signal-readouts"></div>
-          <div class="transport"><div class="playback-status"><span class="playback-dot" id="playback-dot"></span><div><p id="playback-label">Ready</p><span id="playback-detail">Continuous listening</span></div></div><button type="button" class="play-button" id="play-button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 11 7-11 7V5Z" fill="currentColor"/></svg><span>Start listening</span></button><div class="clock-box"><strong id="clock">∞</strong><span id="clock-label">NO TIME LIMIT</span></div></div>
-          <div class="variation-row" id="variation-row" hidden>
-            <span><span class="tiny-spark" aria-hidden="true">✧</span>Variation <strong id="variation-id">001</strong></span>
-            <div><label class="lock-label"><input type="checkbox" id="lock-variation" aria-describedby="variation-help">Keep this variation</label><button type="button" class="quiet-button compact-button" id="new-variation">New variation <span aria-hidden="true">↻</span></button></div>
-            <p id="variation-help">Reuse this variation the next time you listen. Checking this keeps playback going. Restarting begins the variation again. Automatic changes in Harmonic garden and Retro daydream continue when enabled.</p>
-          </div>
         </div>
-
-        <section class="control-panel" aria-labelledby="shape-title"><div class="section-heading"><div><h3 id="shape-title">Shape your sound</h3><p>Move a slider, or enter an exact value.</p></div><button type="button" class="text-button" id="reset-button">Reset preset <span aria-hidden="true">↺</span></button></div><p class="profile-warning" id="profile-warning" hidden></p><div class="parameter-controls" id="parameter-controls"></div>
-          <section class="tone-tools" id="tone-tools" aria-labelledby="tone-tools-title" hidden>
+        <section class="control-panel" aria-labelledby="shape-title">
+          <div class="primary-controls" id="primary-controls" aria-label="Character and pace"></div>
+          <p class="profile-warning" id="profile-warning" hidden></p>
+          <div class="settings-header">
+          <div id="settings-tabs" class="settings-tabs" role="tablist" aria-label="Sound settings">
+            <button type="button" id="tab-mix" role="tab" aria-controls="settings-mix" aria-selected="true">Mix</button>
+            <button type="button" id="tab-sound" role="tab" aria-controls="settings-sound" aria-selected="false" tabindex="-1">Sound</button>
+            <button type="button" id="tab-variation" role="tab" aria-controls="settings-variation" aria-selected="false" tabindex="-1">Variation</button>
+            <button type="button" id="tab-upper" role="tab" aria-controls="settings-upper" aria-selected="false" tabindex="-1">Upper layer</button>
+          </div>
+          <div class="section-heading"><h2 id="shape-title" class="sr-only">Make it yours</h2><button type="button" class="text-button" id="reset-button">Reset preset <span aria-hidden="true">↺</span></button></div>
+          </div>
+          <div class="settings-pair" id="settings-pair">
+          <section id="settings-mix" class="settings-panel" role="tabpanel" aria-labelledby="tab-mix"><div class="parameter-controls" id="parameter-controls"></div></section>
+          <section id="settings-sound" class="settings-panel" role="tabpanel" aria-labelledby="tab-sound" hidden><div class="parameter-controls" id="parameters-sound"></div><section class="tone-tools" id="tone-tools" aria-labelledby="tone-tools-title" hidden>
             <div class="section-heading"><div><h3 id="tone-tools-title">Explore pitch</h3><p id="sweep-status">Ready. Each button starts one pass.</p></div></div>
             <p>Sweeps from 20 Hz to 20,000 Hz, or your audio output's limit. A full sweep takes 30 seconds. A lower output limit makes it shorter. Stop at any time to keep the last displayed frequency.</p>
             <p id="return-description"></p>
             <div class="tone-tool-actions"><button type="button" class="quiet-button" id="spectrum-start">Sweep 20 to 20,000 Hz</button><button type="button" class="quiet-button" id="return-start">Glide up and down</button><button type="button" class="quiet-button sweep-stop" id="sweep-stop" hidden>Stop and keep displayed pitch</button></div>
             <div class="scan-result" id="scan-result" role="status" aria-live="polite" aria-atomic="true" hidden><span id="scan-result-label">Sweep stopped at</span><strong id="scan-result-frequency"></strong><small>This frequency is now selected in the tone control. The display may be slightly behind the sound.</small></div>
             <p>Keep the volume quiet and fixed. Changing the tone frequency during a sweep or glide switches to a steady tone. The listening timer may stop either pass early.</p>
-          </section>
-          <section class="motion-panel" id="soundscape-tools" aria-labelledby="upper-listening-title" hidden>
-            <h3 id="upper-listening-title">Listen to the upper layer</h3>
+          </section></section>
+          </div>
+          <section id="settings-upper" class="settings-panel" role="tabpanel" aria-labelledby="tab-upper" hidden><div class="parameter-controls" id="parameters-upper"></div><details class="motion-panel" id="soundscape-tools" aria-labelledby="upper-listening-title" hidden>
+            <summary id="upper-listening-title">Listen to the upper layer</summary>
             <p id="upper-output"></p>
             <p>Musical connection blends floating shimmer at 0% with a supporting melody at 100%. A narrow frequency range may leave fewer notes or silence.</p>
             <label class="motion-toggle upper-solo"><input type="checkbox" id="high-solo"><span>Hear upper layer alone</span></label>
             <p>Hear upper layer alone fades out the other layers without making this layer louder. This setting resets when you reload the page.</p><p>Keep the volume low. Do not turn it up to find a tone you cannot hear. This is not a hearing test.</p>
-          </section>
-          <section class="motion-panel" id="rate-panel" aria-labelledby="rate-title" hidden>
+          </details></section>
+          <section id="settings-variation" class="settings-panel" role="tabpanel" aria-labelledby="tab-variation" hidden><div class="parameter-controls" id="parameters-variation"></div><div class="variation-row" id="variation-row" hidden>
+            <span><span class="tiny-spark" aria-hidden="true">✧</span>Variation <strong id="variation-id">001</strong></span>
+            <div><span class="lock-control"><label class="lock-label"><input type="checkbox" id="lock-variation" aria-describedby="variation-help">Keep this variation</label><span class="parameter-help variation-info" aria-hidden="true" title="Reuse this variation the next time you listen. Automatic new variation can still change the music.">ⓘ</span></span><button type="button" class="quiet-button compact-button" id="new-variation">New variation <span aria-hidden="true">↻</span></button></div>
+            <p id="variation-help" class="sr-only">Reuse this variation the next time you listen. Automatic new variation can still change the music.</p>
+          </div><section class="motion-panel" id="rate-panel" aria-labelledby="rate-title" hidden>
             <div class="motion-heading"><div><h3 id="rate-title">Rate motion</h3><span id="rate-status">Off</span></div><label class="motion-toggle"><input type="checkbox" id="rate-enabled" aria-describedby="rate-help"><span>Vary the rhythm slowly</span></label></div>
             <p id="rate-help">Slowly varies the frequency difference or pulse rate within the range shown below. Turning it off returns to your chosen rate over five seconds. Tone pitch and volume stay unchanged.</p>
             <p id="rate-ranges"></p>
             <div class="motion-speed-row" id="rate-settings" hidden><label for="rate-speed">Motion speed</label><select id="rate-speed"><option value="slow">Slow</option><option value="medium">Medium</option><option value="fast">Fast</option></select></div>
             <p id="rate-speed-help"></p>
-          </section>
-          <section class="motion-panel" id="motion-panel" aria-labelledby="motion-title" hidden>
+          </section><section class="motion-panel" id="motion-panel" aria-labelledby="motion-title" hidden>
             <div class="motion-heading"><div><h3 id="motion-title">Gentle motion</h3><span id="motion-status">Off</span></div><label class="motion-toggle"><input type="checkbox" id="motion-enabled" aria-describedby="motion-help"><span>Enable gentle motion</span></label></div>
             <p id="motion-help"></p>
             <div id="motion-settings" hidden>
@@ -84,29 +84,37 @@
               <div class="motion-speed-row"><label for="motion-speed">Motion speed</label><select id="motion-speed" aria-describedby="motion-speed-help"><option value="slow">Slow</option><option value="medium" selected>Medium</option><option value="fast">Fast</option></select></div>
               <p class="motion-detail" id="motion-speed-help"></p>
             </div>
-          </section>
+          </section></section>
+          <section id="music-variation" class="settings-panel" role="region" aria-labelledby="variation-title" hidden><h3 id="variation-title" class="sr-only">Variation</h3></section>
         </section>
-
-        <section class="volume-panel" aria-labelledby="volume-title"><button type="button" class="mute-button" id="mute-button" aria-label="Mute sound" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="sound-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/><path class="mute-cross" d="m16 9 6 6m0-6-6 6"/></svg></button><div class="volume-label"><h3 id="volume-title">Volume</h3><span id="volume-hint">Start quietly.</span></div><input type="range" id="volume-slider" min="0.01" max="100" step="0.01" value="1" aria-label="Volume percentage"><div class="number-field volume-number"><input type="number" id="volume-number" min="0.01" max="100" step="0.01" value="1.00" aria-label="Exact volume percentage" inputmode="decimal"><span>%</span></div></section>
-
-        <section class="timer-panel" aria-labelledby="timer-title"><div class="section-heading"><div><h3 id="timer-title">Listening timer</h3><p id="timer-description">Choose a duration. The sound fades before it stops.</p></div><label class="overnight-select"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z"/></svg><span class="sr-only">Overnight timer</span><select id="overnight-timer" aria-label="Overnight timer"><option value="">Overnight</option><option value="21600">6 hours</option><option value="25200">7 hours</option><option value="28800">8 hours</option><option value="32400">9 hours</option><option value="36000">10 hours</option><option value="39600">11 hours</option><option value="43200">12 hours</option></select></label></div><div class="timer-options" role="group" aria-label="Listening timer"><button type="button" class="timer-button selected" data-seconds="continuous" aria-pressed="true">Continuous</button><button type="button" class="timer-button" data-seconds="60" aria-pressed="false">1 min</button><button type="button" class="timer-button" data-seconds="180" aria-pressed="false">3 min</button><button type="button" class="timer-button" data-seconds="300" aria-pressed="false">5 min</button><button type="button" class="timer-button" data-seconds="600" aria-pressed="false">10 min</button><button type="button" class="timer-button" data-seconds="900" aria-pressed="false">15 min</button><button type="button" class="timer-button" data-seconds="1800" aria-pressed="false">30 min</button></div></section>
-
         <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
-        <footer class="studio-footer"><p>Listen at a comfortable level. Stop if a sound causes discomfort.</p><button type="button" class="text-button" id="forget-button">Forget settings</button></footer>
+        <footer class="studio-footer"><p>Listen at a comfortable level.</p><button type="button" class="text-button" id="forget-button">Forget settings</button></footer>
       </section>
     </main>
-    <footer class="page-footer"><span>ENJOY</span><span>Generated locally. Yours to adjust.</span></footer>
+    <footer class="page-footer"><span class="local-badge"><span class="status-dot"></span>Generated on your device</span><span>Made with not so much ❤️ by Thorgin © 2026</span><span>ENJOY</span></footer>
   </div>
-
+  <dialog id="sound-picker" class="sound-picker" aria-labelledby="library-title">
+    <div class="dialog-top"><div><p class="eyebrow">YOUR SOUND SPACE</p><h2 id="library-title">Choose a sound</h2></div><button type="button" class="close-button" id="library-close" aria-label="Close sound library">×</button></div>
+    <div class="filter-row" role="group" aria-label="Filter sounds">
+      <button type="button" class="filter active" data-filter="All" aria-pressed="true">All sounds</button>
+      <button type="button" class="filter" data-filter="Beats" aria-pressed="false">Binaural beats</button>
+      <button type="button" class="filter" data-filter="Pulses" aria-pressed="false">Isochronic tones</button>
+      <button type="button" class="filter" data-filter="Textures" aria-pressed="false">Textures</button>
+      <button type="button" class="filter" data-filter="Music" aria-pressed="false">Music</button>
+    </div>
+    <p class="library-count"><span id="profile-count">26</span> sounds · generated locally</p>
+    <div class="profile-list" id="profile-list"></div>
+  </dialog>
+  <dialog id="timer-dialog" class="timer-dialog" aria-labelledby="timer-title"><div class="dialog-top"><p class="eyebrow">SETTLE IN</p><button type="button" class="close-button" id="timer-close" aria-label="Close listening timer">×</button></div><section class="timer-panel" aria-labelledby="timer-title"><div class="section-heading"><div><h3 id="timer-title">Listening timer</h3><p id="timer-description">Choose a duration. The sound fades before it stops.</p></div><label class="overnight-select"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z"/></svg><span class="sr-only">Overnight timer</span><select id="overnight-timer" aria-label="Overnight timer"><option value="">Overnight</option><option value="21600">6 hours</option><option value="25200">7 hours</option><option value="28800">8 hours</option><option value="32400">9 hours</option><option value="36000">10 hours</option><option value="39600">11 hours</option><option value="43200">12 hours</option></select></label></div><div class="timer-options" role="group" aria-label="Listening timer"><button type="button" class="timer-button selected" data-seconds="continuous" aria-pressed="true">Continuous</button><button type="button" class="timer-button" data-seconds="60" aria-pressed="false">1 min</button><button type="button" class="timer-button" data-seconds="180" aria-pressed="false">3 min</button><button type="button" class="timer-button" data-seconds="300" aria-pressed="false">5 min</button><button type="button" class="timer-button" data-seconds="600" aria-pressed="false">10 min</button><button type="button" class="timer-button" data-seconds="900" aria-pressed="false">15 min</button><button type="button" class="timer-button" data-seconds="1800" aria-pressed="false">30 min</button></div></section></dialog>
   <dialog id="about-dialog" aria-labelledby="about-title">
     <div class="dialog-top"><p class="eyebrow" id="about-type"></p><button type="button" class="close-button" id="close-dialog" aria-label="Close description">×</button></div>
     <h2 id="about-title"></h2>
     <p class="dialog-description" id="about-description"></p>
-    <h3>What people use it for</h3><p id="about-purpose"></p>
-    <h3>Background</h3><p id="about-background"></p>
-    <h3>How to use it</h3><p id="about-how"></p>
-    <h3>What research shows</h3><p id="about-evidence"></p>
-    <details class="source-details" id="source-details"><summary>Sources and reading</summary><ul id="about-sources"></ul></details>
+    <section id="about-section-purpose"><h3>What people use it for</h3><p id="about-purpose"></p></section>
+    <h3 id="about-background-title">Background</h3><p id="about-background"></p><dl id="about-characters" class="character-inspirations" hidden></dl>
+    <section id="about-section-how"><h3>How to use it</h3><p id="about-how"></p></section>
+    <section id="about-section-evidence"><h3>What research shows</h3><p id="about-evidence"></p></section>
+    <section id="about-section-sources"><details class="source-details" id="source-details"><summary>Sources and reading</summary><ul id="about-sources"></ul></details></section>
     <div class="dialog-note">Volume is a digital setting. It does not measure the sound level at your ears. Start quietly.</div>
     <div class="dialog-actions"><button type="button" class="quiet-button" id="dialog-stop" hidden>Stop sound</button><button type="button" class="dialog-done" id="dialog-done">Got it</button></div>
   </dialog>

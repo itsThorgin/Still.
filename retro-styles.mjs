@@ -1,3 +1,4 @@
+import { RETRO_CHARACTERS } from './retro-characters.mjs';
 export const RETRO_STYLES = Object.freeze([
   Object.freeze({ value: 1, label: 'Peaceful village' }),
   Object.freeze({ value: 2, label: 'Dreamy exploration' }),
@@ -9,6 +10,7 @@ export const RETRO_STYLES = Object.freeze([
   Object.freeze({ value: 8, label: 'Sunny afternoon', family: 3, sound: 'clear' }),
   Object.freeze({ value: 9, label: 'Emerald quest', family: 4, sound: 'clear' }),
   Object.freeze({ value: 10, label: 'Midnight café', family: 5, sound: 'clear' }),
+  ...RETRO_CHARACTERS,
 ]);
 
 export function mixRetroSeed(seed) {
@@ -26,7 +28,5 @@ export function nextRetroStyle(seed, current) {
 export function retroStyle(selection, seed) {
   const chosen = RETRO_STYLES.find((style) => style.value === selection);
   if (chosen) return chosen;
-  // Keep the seed's theme family; choose familiar or companion writing independently.
-  const family = Math.floor(mixRetroSeed(seed) / 4294967296 * 5);
-  return RETRO_STYLES[family + ((mixRetroSeed(seed ^ 0x243f6a88) & 1) ? 5 : 0)];
+  return RETRO_STYLES[Math.floor(mixRetroSeed(seed) / 4294967296 * RETRO_STYLES.length)];
 }

@@ -4,11 +4,18 @@ import { AudioEngine } from './audio/engine.mjs';
 import { normalizeMotion, motionBounds, MOTION_SECONDS } from './audio/motion.mjs';
 import { ToneSweep, toneLimit, GLIDE_SECONDS } from './audio/tone-sweep.mjs';
 import { normalizeRateMotion, rateBand, RATE_SECONDS } from './audio/rate-motion.mjs';
-import { retroStyle } from './retro-styles.mjs';
+import { retroStyle, RETRO_STYLES } from './retro-styles.mjs';
 import { gardenInfluences } from './garden-influences.mjs';
 import { SEQUENCE_SOUNDS, sequencePalette } from './sequence-palettes.mjs';
+import { electronicCharacter, ELECTRONIC_KINDS } from './electronic-characters.mjs';
+import { electronicVariationMix, ELECTRONIC_MIX_KEYS, ALL_MIX_SETTINGS, normalizeMixMask, mixSettingEnabled } from './electronic-variation.mjs';
+import { profilePresentation, controlSection, controlHelp } from './ui-presentation.mjs';
+import { initializeFocusUI } from './focus-ui.mjs';
+import { musicAbout } from './music-about.mjs';
+import { initializeAudioArtwork, drawRestingArtwork } from './audio-artwork.mjs';
 
 const $ = (id) => document.getElementById(id);
+const focusUI = initializeFocusUI();
 let state;
 try { state = parseSettings(localStorage.getItem(STORAGE_KEY)); }
 catch { state = defaultSettings(); }
@@ -32,6 +39,12 @@ const icons = {
   noise: '<path d="m2 13 2-4 2 7 2-11 2 14 2-9 2 6 2-12 2 14 2-8 2 3"/>',
   sequence: '<path d="M4 14v5m5-12v10m5-13v8m5-3v10" stroke-linecap="round"/>',
   retro: '<path d="M3 15V9h5v6h5V9h5v6h3M8 9V5h10v4"/>',
+  synthwave: '<path d="m2 17 5-10 5 10 5-10 5 10M3 21h18M8 3h8"/>',
+  bassmusic: '<path d="M3 10v4m4-7v10m5-14v18m5-14v10m4-7v4" stroke-linecap="round"/>',
+  ambient: '<path d="M2 15c3-9 6 9 10 0s6 7 10-2M3 8c4-5 5 5 9 0s6 4 9 0M4 20h16" stroke-linecap="round"/>',
+  fantasy: '<path d="m3 21 8-13 3 5 2-3 6 11H3ZM10 8l2-5 2 5M7 15h5" stroke-linejoin="round"/>',
+  lounge: '<path d="M4 5h12v8a6 6 0 0 1-12 0V5Zm12 1h2a3 3 0 0 1 0 6h-2M3 21h17"/>',
+  techno: '<path d="M3 5h18v14H3V5Zm4 4v6m5-8v10m5-6v4" stroke-linecap="round"/>',
   tone: '<path d="M2 12c4-13 6-13 10 0s6 13 10 0"/>',
 };
 
@@ -71,12 +84,16 @@ const engine = new AudioEngine(({ playing, message }) => {
   syncParameters(undefined, true);
   renderRateMotion();
   renderSoundSummary(false);
-}, ({ seed, style }) => {
+}, ({ seed, style, mix }) => {
   const kind = getProfile(state.profileId).kind;
-  if (!['soundscape', 'retro'].includes(kind) || !Number.isInteger(seed) || seed <= 0 || seed > 0xffffffff) return;
+  if (!['soundscape', 'retro', ...ELECTRONIC_KINDS].includes(kind) || !Number.isInteger(seed) || seed <= 0 || seed > 0xffffffff) return;
   if (kind === 'retro') {
-    if (!Number.isInteger(style) || style < 0 || style > 10) return;
+    if (!Number.isInteger(style) || style < 0 || style > RETRO_STYLES.length) return;
     state.params.style = style;
+    syncParameters();
+  }
+  if (ELECTRONIC_KINDS.includes(kind) && mix) {
+    state.params = normalizeParams(getProfile(state.profileId), { ...state.params, ...mix });
     syncParameters();
   }
   state.seed = seed; variationNumber++;
@@ -88,6 +105,7 @@ const engine = new AudioEngine(({ playing, message }) => {
   renderSoundSummary(false);
 });
 engine.setRateMotion(state.rateMotion);
+initializeAudioArtwork(engine, () => drawSignal());
 
 function save() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -127,9 +145,9 @@ function renderLibrary() {
     const copy = document.createElement('span');
     copy.className = 'profile-copy';
     const title = document.createElement('strong');
-    title.textContent = profile.name;
+    title.textContent = profilePresentation(profile).name;
     const subtitle = document.createElement('small');
-    subtitle.textContent = profile.subtitle;
+    subtitle.textContent = profilePresentation(profile).subtitle;
     copy.append(title, subtitle);
     button.append(icon, copy);
     if (engine.playing && profile.id === state.profileId) {
@@ -137,12 +155,12 @@ function renderLibrary() {
       dot.className = 'profile-playing';
       button.append(dot);
     }
-    button.addEventListener('click', () => selectProfile(profile.id));
+    button.addEventListener('click', () => { selectProfile(profile.id); if (!busy) focusUI.closePicker(); });
     const about = document.createElement('button');
     about.type = 'button';
     about.className = 'profile-info';
     about.textContent = 'i';
-    about.setAttribute('aria-label', `About ${profile.name}`);
+    about.setAttribute('aria-label', `About ${profilePresentation(profile).name}`);
     about.addEventListener('click', () => openAbout(profile.id));
     wrapper.append(button, about);
     $('profile-list').append(wrapper);
@@ -172,8 +190,9 @@ function selectProfile(id) {
 
 function renderProfile() {
   const profile = getProfile(state.profileId);
-  $('profile-name').textContent = profile.name;
-  $('profile-type').textContent = profile.type;
+  $('profile-name').textContent = profilePresentation(profile).name;
+  $('profile-type').textContent = profilePresentation(profile).subtitle;
+  $('cover-label').textContent = profile.family === 'Music' ? 'still / ' + profilePresentation(profile).name.toLowerCase() : 'still / ' + profile.type.toLowerCase();
   $('output-label').textContent = profile.headphones ? 'Stereo headphones' : 'Speakers or headphones';
   $('variation-row').hidden = !profile.variation;
   $('profile-warning').hidden = !profile.warning;
@@ -187,28 +206,23 @@ function renderProfile() {
   renderSoundscapeTools();
   renderSoundSummary();
   renderPlayback();
+  focusUI.configure(profile);
 }
 
 function renderParameters() {
   const profile = getProfile(state.profileId);
   controls.clear();
-  $('parameter-controls').replaceChildren();
-  const groups = new Map();
-  for (const control of profile.controls) {
-    let container = $('parameter-controls');
-    if (control.group) {
-      if (!groups.has(control.group)) {
-        const group = document.createElement('details');
-        group.className = 'parameter-group';
-        group.open = ['Music', 'Upper frequencies'].includes(control.group);
-        const heading = document.createElement('summary'); heading.textContent = control.group;
-        const content = document.createElement('div'); content.className = 'parameter-group-content';
-        group.append(heading, content); container.append(group); groups.set(control.group, content);
-      }
-      container = groups.get(control.group);
-    }
+  for (const id of ['parameter-controls', 'parameters-sound', 'parameters-variation', 'parameters-upper', 'primary-controls']) $(id).replaceChildren();
+  const displayControls = profile.controls.filter(control => control.key !== 'varyAmount');
+  const amount = profile.controls.find(control => control.key === 'varyAmount');
+  if (amount) displayControls.splice(displayControls.findIndex(control => control.key === 'varyMix'), 0, amount);
+  for (const control of displayControls) {
+    const helpText = controlHelp(profile, control);
+    const section = controlSection(profile, control);
+    const container = $({primary: 'primary-controls', mix: 'parameter-controls', sound: 'parameters-sound', variation: 'parameters-variation', upper: 'parameters-upper'}[section]);
     const row = document.createElement('div');
     row.className = 'parameter-row';
+    row.dataset.control = control.key;
     const label = document.createElement('label');
     label.className = 'parameter-label';
     label.htmlFor = `parameter-${control.key}`;
@@ -216,20 +230,51 @@ function renderParameters() {
     const hint = document.createElement('span');
     hint.className = 'parameter-help';
     hint.textContent = 'ⓘ';
-    hint.title = control.help;
+    hint.title = helpText;
     hint.setAttribute('aria-hidden', 'true');
     label.append(hint);
+    if (control.toggle) {
+      const toggle = document.createElement('input');
+      toggle.type = 'checkbox'; toggle.id = `parameter-${control.key}`;
+      toggle.setAttribute('aria-label', control.label);
+      toggle.setAttribute('aria-describedby', `help-${control.key}`);
+      const help = document.createElement('span'); help.id = `help-${control.key}`;
+      help.className = 'sr-only'; help.textContent = helpText;
+      row.className += ' parameter-toggle-row';
+      toggle.addEventListener('change', () => updateParameter(control.key, toggle.checked ? 1 : 0));
+      if (control.key === 'varyMix') {
+        label.className += ' variation-toggle';
+        label.insertBefore(toggle, label.firstChild);
+        row.append(label, help);
+      } else row.append(label, toggle, help);
+      container.append(row);
+      if (control.key === 'varyMix') {
+        const actions = document.createElement('div'); actions.className = 'mix-selection-actions';
+        for (const [text, value] of [['Select all', ALL_MIX_SETTINGS], ['Select none', 0]]) {
+          const button = document.createElement('button'); button.type = 'button';
+          button.className = 'text-button'; button.textContent = text;
+          button.id = value ? 'vary-select-all' : 'vary-select-none';
+          button.setAttribute('aria-label', value ? 'Select all settings for mix variation' : 'Select no settings for mix variation');
+          button.addEventListener('click', () => updateParameter('varyMask', value));
+          actions.append(button);
+        }
+        row.append(actions);
+      }
+      controls.set(control.key, { control, toggle });
+      continue;
+    }
     if (control.options) {
       const select = document.createElement('select');
       select.id = `parameter-${control.key}`; select.className = 'parameter-select';
+      select.setAttribute('aria-label', control.label);
       select.setAttribute('aria-describedby', `help-${control.key}`);
       for (const option of control.options) {
         const item = document.createElement('option'); item.value = String(option.value);
         item.textContent = control.unit ? `${option.value} ${control.unit} · ${option.label}` : option.label; select.append(item);
       }
       const help = document.createElement('p'); help.id = `help-${control.key}`;
-      help.className = ['sequence', 'plucks', 'drift', 'soundscape', 'retro'].includes(profile.kind) ? 'sr-only' : 'parameter-option-help';
-      help.textContent = control.help;
+      help.className = ['sequence', 'plucks', 'drift', 'soundscape', 'retro', ...ELECTRONIC_KINDS].includes(profile.kind) ? 'sr-only' : 'parameter-option-help';
+      help.textContent = helpText;
       select.addEventListener('change', () => updateParameter(control.key, Number(select.value)));
       row.append(label, select, help); container.append(row);
       controls.set(control.key, { control, select });
@@ -253,7 +298,7 @@ function renderParameters() {
     const marker = document.createElement('span'); marker.className = 'centre-marker'; marker.setAttribute('aria-hidden', 'true');
     const track = document.createElement('div'); track.className = 'parameter-track'; track.append(slider, marker);
     const help = document.createElement('span');
-    help.className = 'sr-only'; help.id = `help-${control.key}`; help.textContent = control.help;
+    help.className = 'sr-only'; help.id = `help-${control.key}`; help.textContent = helpText;
     sliderWrap.append(track, ends, help);
     const field = document.createElement('div'); field.className = 'number-field';
     const input = document.createElement('input');
@@ -272,8 +317,24 @@ function renderParameters() {
     input.addEventListener('change', () => updateParameter(control.key, input.valueAsNumber));
     input.addEventListener('blur', () => syncParameters());
     input.addEventListener('keydown', (event) => { if (event.key === 'Enter') input.blur(); });
-    row.append(label, sliderWrap, field);
-    controls.set(control.key, { control, slider, input, marker, centre });
+    let heading = label, mixChoice;
+    if (ELECTRONIC_KINDS.includes(profile.kind) && ELECTRONIC_MIX_KEYS.includes(control.key)) {
+      heading = document.createElement('div'); heading.className = 'parameter-heading';
+      const choiceLabel = document.createElement('label'); choiceLabel.className = 'mix-choice';
+      choiceLabel.title = control.key === 'tempo'
+        ? 'Vary around the incoming character’s standard pace. Uncheck to use its exact standard BPM.'
+        : 'Allow this setting to vary on automatic changes and New variation when Vary mix at each change is on. Uncheck to keep its current value.';
+      mixChoice = document.createElement('input'); mixChoice.type = 'checkbox'; mixChoice.id = `vary-${control.key}`;
+      mixChoice.setAttribute('aria-label', `Vary ${control.label.toLowerCase()} at each change`);
+      const choiceText = document.createElement('span'); choiceText.textContent = 'Vary';
+      choiceLabel.append(mixChoice, choiceText); heading.append(label, choiceLabel);
+      mixChoice.addEventListener('change', () => {
+        const bit = 1 << ELECTRONIC_MIX_KEYS.indexOf(control.key), mask = normalizeMixMask(state.params.varyMask);
+        updateParameter('varyMask', mixChoice.checked ? mask | bit : mask & ~bit);
+      });
+    }
+    row.append(heading, sliderWrap, field);
+    controls.set(control.key, { control, slider, input, marker, centre, mixChoice });
     container.append(row);
   }
   syncParameters();
@@ -284,6 +345,18 @@ function updateParameter(key, value, editingInput) {
   scanResult = null;
   if (liveSweep) { liveSweep = null; liveParams = null; }
   state.params = normalizeParams(profile, { ...state.params, [key]: value }, key);
+  if (profile.kind === 'retro' && key === 'style' && state.params.style > 10) {
+    state.params.tempo = retroStyle(state.params.style, state.seed).tempo;
+  }
+  if (profile.character && key === 'style') {
+    const character = electronicCharacter(profile.kind, state.params.style, state.seed, state.params.scene);
+    state.params.tempo = character.tempo;
+    if (profile.kind === 'fantasy') state.params.scene = character.scene;
+  }
+  if (profile.kind === 'fantasy' && key === 'scene') {
+    state.params.style = 0;
+    state.params.tempo = electronicCharacter('fantasy',0,state.seed,state.params.scene).tempo;
+  }
   if (!engine.playing && ['influence', 'arrangements', 'strings'].includes(key)) gardenReport = null;
   syncParameters(editingInput, false, key);
   engine.setParams(state.params);
@@ -296,9 +369,22 @@ function updateParameter(key, value, editingInput) {
 
 function syncParameters(editingInput, liveUpdate = false, changedKey = null) {
   const profile = getProfile(state.profileId);
-  for (const [key, { control, slider, input, marker, centre, select }] of controls) {
+  const fixedTempo=profile.character?electronicCharacter(profile.kind,state.params.style,state.seed,state.params.scene).fixedTempo:null;
+  if(fixedTempo)state.params.tempo=fixedTempo;
+  for (const [key, { control, slider, input, marker, centre, select, toggle, mixChoice }] of controls) {
+    if (toggle) { toggle.checked = state.params[key] === 1; continue; }
     if (select) { select.value = String(state.params[key]); continue; }
+    if (mixChoice) {
+      mixChoice.checked = mixSettingEnabled(state.params, key);
+      mixChoice.parentElement.hidden = state.params.varyMix !== 1;
+      mixChoice.setAttribute('aria-describedby', 'help-varyMix');
+    }
     const value = key !== changedKey && engine.playing && liveParams ? liveParams[key] : state.params[key];
+    if(key==='tempo'){
+      slider.disabled=input.disabled=!!fixedTempo;
+      slider.title=input.title=fixedTempo?`This character uses a fixed ${fixedTempo} BPM.`:'';
+      if(mixChoice)mixChoice.disabled=!!fixedTempo;
+    }
     const shown = Math.max(control.min, Math.min(control.max, Math.round(value / control.step) * control.step));
     if (!liveUpdate || slider !== document.activeElement) slider.value = String(sliderPosition(control, value));
     slider.setAttribute('aria-valuetext', `${Number(shown.toFixed(4))} ${control.unit}`);
@@ -309,7 +395,8 @@ function syncParameters(editingInput, liveUpdate = false, changedKey = null) {
     marker.style.left = `${sliderPosition(control, state.params[key]) / 10}%`;
     centre.textContent = `Chosen ${state.params[key]} ${control.unit}`;
   }
-  const modified = Object.keys(profile.defaults).some((key) => state.params[key] !== profile.defaults[key]);
+  const modified = Object.keys(profile.defaults).some((key) => state.params[key] !== profile.defaults[key])
+    || ELECTRONIC_KINDS.includes(profile.kind) && normalizeMixMask(state.params.varyMask) !== ALL_MIX_SETTINGS;
   $('modified-tag').hidden = !modified;
   $('reset-button').disabled = !modified && !highSolo;
 }
@@ -466,6 +553,9 @@ function renderSoundSummary(draw = true) {
   else if (profile.kind === 'tone') values = [[p.base, 'Tone frequency']];
   else if (profile.kind === 'soundscape') values = [[p.tempo, 'Musical pace', '/min'], [p.highLow, 'Upper layer from'], [p.highHigh, 'Upper layer to']];
   else if (profile.kind === 'retro') values = [[p.tempo, 'Musical pace', '/min'], [p.melody, 'Melody blend', '%'], [p.percussion, 'Percussion blend', '%']];
+  else if (profile.kind === 'ambient') values = [[p.tempo, 'Evolution pace', 'BPM'], [p.melody, 'Distant notes', '%'], [p.accompaniment, 'Drone layers', '%']];
+  else if (profile.kind === 'fantasy') values = [[p.tempo, 'Musical pace', 'BPM'], [p.intensity, 'Intensity', '%'], [p.percussion, 'Hand percussion', '%']];
+  else if (profile.character) values = [[p.tempo, 'Musical pace', 'BPM'], [p.melody, 'Melody blend', '%'], [p.percussion, 'Drum blend', '%']];
   else values = [[p.low, profile.kind === 'noise' ? 'Lower filter edge' : 'Lowest tone'], [p.high, profile.kind === 'noise' ? 'Upper filter edge' : 'Highest tone']];
   $('signal-readouts').replaceChildren();
   for (const [value, label, unitLabel = 'Hz'] of values) {
@@ -478,6 +568,10 @@ function renderSoundSummary(draw = true) {
   $('band-label').textContent = `${p.beat ? rhythmBand(p.beat) : profile.band} / ${p.beat ? `${formatFrequency(p.beat)} HZ` : profile.kind === 'tone' ? 'STEADY TONE' : 'GENERATED SOUND'}`;
   if (profile.kind === 'soundscape') $('band-label').textContent = highSolo ? 'MUSIC / UPPER LAYER ALONE' : `GARDEN / ${(gardenReport?.influences ?? gardenInfluences(state.seed, state.params.influence)).map((item) => item.label.toUpperCase()).join(' + ')}`;
   if (profile.kind === 'retro') $('band-label').textContent = `RETRO / ${retroStyle(state.params.style, state.seed).label.toUpperCase()}`;
+  if (profile.character) {
+    const character = electronicCharacter(profile.kind, state.params.style, state.seed, state.params.scene);
+    $('band-label').textContent = `${character.genre.toUpperCase()} / ${character.label.toUpperCase()}`;
+  }
   if (SEQUENCE_SOUNDS[profile.kind]) $('band-label').textContent = `TEXTURE / ${sequencePalette(profile.kind, state.seed, state.params.palette).label.toUpperCase()}`;
   $('output-label').textContent = profile.headphones || (profile.kind === 'soundscape' && state.params.binauralMix > 0) ? 'Stereo headphones' : 'Speakers or headphones';
   renderGardenChoices();
@@ -485,25 +579,7 @@ function renderSoundSummary(draw = true) {
 }
 
 function drawSignal() {
-  const profile = getProfile(state.profileId);
-  const p = state.params;
-  const cycles = profile.kind === 'tone' || profile.kind === 'binaural' || profile.kind === 'isochronic' ? 6 + Math.log2(p.base / 60) * 1.5 : 13;
-  function path(secondary) {
-    let d = '';
-    for (let x = 0; x <= 900; x += 2) {
-      const progress = x / 900;
-      const edge = Math.sin(Math.PI * progress) ** 0.6;
-      let value = Math.sin(progress * Math.PI * 2 * (cycles + (secondary ? (p.beat ?? 3) / 30 : 0)) + (secondary ? 1.6 : 0));
-      if (profile.kind === 'isochronic') value *= 0.2 + 0.8 * ((Math.sin(progress * Math.PI * 2 * 4) + 1) / 2) ** 2;
-      if (profile.kind === 'noise') value = (Math.sin(x * 0.31) + Math.sin(x * 0.073 + 2) * 0.8 + Math.sin(x * 0.53 + 5) * 0.3) / 2.1;
-      if (profile.kind === 'sequence') value *= (0.3 + Math.cos(progress * Math.PI * 2 * 2) ** 4 * 0.7);
-      const y = 80 + value * edge * (secondary ? 35 : 40);
-      d += `${x === 0 ? 'M' : 'L'}${x},${y.toFixed(2)} `;
-    }
-    return d;
-  }
-  $('wave-primary').setAttribute('d', path(false));
-  $('wave-secondary').setAttribute('d', path(true));
+  drawRestingArtwork((state.seed % 997) / 997 * Math.PI * 2);
 }
 
 function renderVolume(editing = false) {
@@ -530,6 +606,7 @@ function setTimer(duration) {
   renderTimers();
   renderPlayback();
   save();
+  focusUI.closeTimer();
 }
 
 function renderTimers() {
@@ -559,7 +636,7 @@ function renderPlayback() {
   const left = completed ? 0 : playing ? remainingSeconds(deadline) : state.timer;
   const timerLeft = playing ? remainingSeconds(engine.deadline) : null;
   const fading = playing && timerLeft !== null && timerLeft <= fadeSeconds(state.timer);
-  $('playback-label').textContent = busy ? 'Getting ready' : fading ? 'Fading to silence' : playing ? 'Playing' : completed ? 'Session complete' : 'Ready';
+  $('playback-label').textContent = busy ? 'Getting ready' : fading ? 'Fading to silence' : engine.bassPlaybackStage() || (playing ? 'Playing' : completed ? 'Session complete' : 'Ready');
   $('playback-detail').textContent = completed ? 'Select Start listening to begin again.' : playing && liveSweep ? 'Stops when the sweep or glide ends.' : state.timer === null ? 'Continuous listening' : playing ? 'Stops at the end of the timer' : 'Timer starts with playback.';
   $('clock').textContent = left === null ? '∞' : formatClock(left);
   $('clock-label').textContent = completed ? 'COMPLETE' : left === null ? 'NO TIME LIMIT' : playing ? 'REMAINING' : 'SESSION LENGTH';
@@ -569,11 +646,23 @@ function renderPlayback() {
 
 function openAbout(id) {
   const profile = getProfile(id);
-  $('about-title').textContent = profile.name;
+  const music = profile.family === 'Music';
+  focusUI.closePicker();
+  $('about-title').textContent = profilePresentation(profile).name;
   $('about-type').textContent = profile.type.toUpperCase();
   $('about-description').textContent = profile.description;
   $('about-purpose').textContent = profile.purpose;
   $('about-background').textContent = profile.background;
+  for (const section of ['purpose', 'how', 'evidence', 'sources']) $('about-section-' + section).hidden = music;
+  $('about-background').hidden = music;
+  $('about-characters').hidden = !music;
+  $('about-background-title').textContent = music ? 'Character inspirations' : 'Background';
+  $('about-characters').replaceChildren();
+  if (music) for (const character of musicAbout(profile)) {
+    const item = document.createElement('div'), name = document.createElement('dt'), detail = document.createElement('dd');
+    name.textContent = character.name; detail.textContent = character.inspiration;
+    item.append(name, detail); $('about-characters').append(item);
+  }
   $('about-how').textContent = profile.how;
   $('about-evidence').textContent = profile.evidence;
   $('about-sources').replaceChildren();
@@ -604,7 +693,12 @@ $('play-button').addEventListener('click', async () => {
     if (profile.variation && !state.locked) { state.seed = randomSeed(); variationNumber++; }
     await engine.prepare();
     // Read current controls after loading. An edit during loading must take effect.
-    engine.play(getProfile(state.profileId), state.params, state.seed, state.timer, state.volume, state.muted, state.motion);
+    const incoming = getProfile(state.profileId);
+    if (incoming.character && state.params.style === 0 && !state.locked) {
+      state.params.tempo = electronicCharacter(incoming.kind, 0, state.seed, state.params.scene).tempo;
+      syncParameters();
+    }
+    engine.play(incoming, state.params, state.seed, state.timer, state.volume, state.muted, state.motion);
     renderRateMotion(); renderSoundscapeTools();
     $('variation-id').textContent = String(variationNumber).padStart(3, '0');
     save();
@@ -632,10 +726,18 @@ $('return-start').addEventListener('click', () => startToneSweep('return'));
 $('sweep-stop').addEventListener('click', () => engine.stop('Stopped. The displayed pitch is now selected.'));
 $('new-variation').addEventListener('click', () => {
   state.seed = randomSeed(); variationNumber++;
+  const profile = getProfile(state.profileId);
+  if (ELECTRONIC_KINDS.includes(profile.kind) && state.params.varyMix === 1) {
+    const character = electronicCharacter(profile.kind, state.params.style, state.seed, state.params.scene);
+    const mix = electronicVariationMix(profile.kind, character, state.seed, state.params);
+    state.params = normalizeParams(profile, { ...state.params, ...mix });
+  } else if (profile.character && state.params.style === 0) {
+    state.params.tempo = electronicCharacter(profile.kind, 0, state.seed, state.params.scene).tempo;
+  }
   gardenReport = null;
   liveParams = null; liveMoving = false; liveRateMoving = false;
-  engine.changeProfile(getProfile(state.profileId), state.params, state.seed);
-  syncParameters(); renderSoundSummary(); renderRateMotion();
+  engine.changeProfile(profile, state.params, state.seed);
+  syncParameters(); renderSoundSummary(); renderRateMotion(); renderPlayback();
   $('variation-id').textContent = String(variationNumber).padStart(3, '0'); save();
 });
 $('lock-variation').addEventListener('change', () => { state.locked = $('lock-variation').checked; save(); });

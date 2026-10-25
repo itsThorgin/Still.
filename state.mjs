@@ -1,6 +1,7 @@
 import { getProfile } from './profiles.mjs';
 import { normalizeMotion, restoreMotion } from './audio/motion.mjs';
 import { normalizeRateMotion } from './audio/rate-motion.mjs';
+import { normalizeMixMask } from './electronic-variation.mjs';
 
 export const STORAGE_KEY = 'still.settings.v1';
 export const VOLUME_POLICY = 2;
@@ -21,6 +22,8 @@ export function normalizeParams(profile, input = {}, changedKey) {
     result[control.key] = control.options && !control.options.some((option) => option.value === rounded)
       ? profile.defaults[control.key] : Number(rounded.toFixed(4));
   }
+  if ('varyMix' in profile.defaults && Object.hasOwn(input, 'varyMask')) result.varyMask = normalizeMixMask(input.varyMask);
+  if (profile.kind === 'bassmusic' && result.style === 42) result.tempo = 174;
   if ('low' in result && result.low >= result.high) {
     if (changedKey === 'low') result.low = result.high - 1;
     else result.high = result.low + 1;

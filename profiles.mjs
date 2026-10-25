@@ -4,6 +4,8 @@ import { RETRO_STYLES } from './retro-styles.mjs';
 import { GARDEN_INFLUENCES } from './garden-influences.mjs';
 import { ARRANGEMENT_OPTIONS, STRING_OPTIONS, VARIATION_OPTIONS } from './garden-options.mjs';
 import { sequencePaletteControl } from './sequence-palettes.mjs';
+import { ELECTRONIC_PROFILES, AMBIENT_PROFILE } from './electronic-presets.mjs';
+import { JOURNEY_PROFILES } from './journey-presets.mjs';
 
 const carrier = { key: 'base', label: 'Left-ear frequency', unit: 'Hz', min: 60, max: 1000, step: 0.1, scale: 'log', help: 'The tone sent to the left ear.' };
 const difference = { key: 'beat', label: 'Frequency difference', unit: 'Hz', min: 0.5, max: 40, step: 0.1, help: 'The right tone is this much higher than the left tone.' };
@@ -67,7 +69,7 @@ export const PROFILES = [
     { ...noteLength, min: 4, max: 30 },
     { key: 'overlap', label: 'Overlap', unit: '%', min: 0, max: 100, step: 1, help: 'Higher values allow more notes to play at the same time. At 0%, notes stay separate.' },
   ], headphones: false, variation: true },
-  { id: 'chamber-soundscape', name: 'Harmonic garden', band: 'MUSIC', kind: 'soundscape', family: 'Textures', type: 'Evolving musical soundscape', subtitle: 'Interwoven voices, air and shimmer',
+  { id: 'chamber-soundscape', name: 'Harmonic garden', band: 'MUSIC', kind: 'soundscape', family: 'Music', type: 'Evolving musical soundscape', subtitle: 'Interwoven voices, air and shimmer',
     defaults: { influence: 0, arrangements: 7, strings: 15, variationMinutes: 0, tempo: 56, brightness: 55, music: 80, background: 1, shimmer: 35, width: 66, highMix: 3, highConnection: 70, highLow: 12000, highHigh: 20000, binauralMix: 0, beat: 10 },
     controls: [
       { key: 'arrangements', label: 'Arrangement choices', unit: '', min: 1, max: 7, step: 1, group: 'Music', options: ARRANGEMENT_OPTIONS, help: 'Each variation picks one selected arrangement. Original and Resonant keep their familiar parts. Seeded ensembles also change the instruments, including organ.' },
@@ -87,21 +89,24 @@ export const PROFILES = [
       { key: 'binauralMix', label: 'Binaural blend', unit: '%', min: 0, max: 100, step: 1, group: 'Binaural layer', help: 'The level of the binaural tones. At 0%, this layer is off. Use stereo headphones.' },
       { ...difference, group: 'Binaural layer' },
     ], headphones: false, variation: true },
-  { id: 'retro-daydream', name: 'Retro daydream', band: 'RETRO', kind: 'retro', family: 'Textures', type: 'Evolving retro music', subtitle: 'Little worlds, new melodies',
+  { id: 'retro-daydream', name: 'Retro daydream', band: 'RETRO', kind: 'retro', family: 'Music', type: 'Evolving retro music', subtitle: 'Little worlds, new melodies',
     defaults: { style: 0, variationMinutes: 0, tempo: 76, warmth: 65, melody: 15, accompaniment: 55, bass: 80, percussion: 18, ambience: 25, width: 65, drift: 25 },
     controls: [
-      { key: 'style', label: 'Musical character', unit: '', min: 0, max: 10, step: 1, group: 'Music', options: [{ value: 0, label: 'Automatic with each variation' }, ...RETRO_STYLES], help: 'The first five keep their familiar music. The next five add related melodies, lighter chord changes and revised instruments. Automatic chooses from all ten. Changes fade into the next character.' },
-      { key: 'variationMinutes', label: 'Automatic character change', unit: '', min: 0, max: 60, step: 1, group: 'Music', options: VARIATION_OPTIONS.map((option) => option.value ? option : { value: 0, label: 'Off: keep this character' }), help: 'Choose a different character from all ten after a random time in the shown range. Fade out for 12 seconds, then fade in for 8 seconds. The picker shows the new character. Volume, layer levels and the listening timer stay the same. Works with Keep this variation on. Off keeps the current character developing.' },
+      { key: 'style', label: 'Musical character', unit: '', min: 0, max: RETRO_STYLES.length, step: 1, group: 'Music', options: [{ value: 0, label: 'Automatic with each variation' }, ...RETRO_STYLES], help: 'Ten familiar characters and 36 new little worlds, from dry handheld tunes to spacious forest, village and nighttime music. Automatic chooses from all 46. Changes fade into the next character.' },
+      { key: 'variationMinutes', label: 'Automatic character change', unit: '', min: 0, max: 60, step: 1, group: 'Music', options: VARIATION_OPTIONS.map((option) => option.value ? option : { value: 0, label: 'Off: keep this character' }), help: 'Choose a different character from all 46 after a random time in the shown range. Fade out for 12 seconds, then fade in for 8 seconds. The picker shows the new character. Volume, layer levels and the listening timer stay the same. Works with Keep this variation on. Off keeps the current character developing.' },
       { key: 'tempo', label: 'Musical pace', unit: '/min', min: 40, max: 110, step: 1, group: 'Music', help: 'The number of musical beats per minute.' },
       { key: 'melody', label: 'Melody blend', unit: '%', min: 0, max: 100, step: 1, group: 'Music', help: 'The level of the main melody and answering notes.' },
       { key: 'accompaniment', label: 'Accompaniment blend', unit: '%', min: 0, max: 100, step: 1, group: 'Music', help: 'The level of chords and repeating note patterns behind the melody.' },
       { key: 'bass', label: 'Bass blend', unit: '%', min: 0, max: 100, step: 1, group: 'Music', help: 'The level of the low bass notes.' },
       { key: 'percussion', label: 'Percussion blend', unit: '%', min: 0, max: 100, step: 1, group: 'Texture', help: 'The level of drum sounds. At 0%, percussion is off.' },
       { key: 'warmth', label: 'Warmth', unit: '%', min: 0, max: 100, step: 1, group: 'Texture', help: 'Higher values make the sound softer and less bright.' },
-      { key: 'ambience', label: 'Room and tape air', unit: '%', min: 0, max: 100, step: 1, group: 'Texture', help: 'Adds soft echoes and faint background noise. At 0%, both are off.' },
+      { key: 'ambience', label: 'Room and ambience', unit: '%', min: 0, max: 100, step: 1, group: 'Texture', help: 'Adds the character’s room and echoes. Familiar characters retain their tape air; new characters use a quiet, noise-free room. Dry handheld characters stay dry. At 0%, the effects are off.' },
       { key: 'width', label: 'Stereo width', unit: '%', min: 0, max: 100, step: 1, group: 'Texture', help: 'How far musical sounds spread between the left and right channels. Echoes may still differ between channels.' },
       { key: 'drift', label: 'Pitch drift', unit: '%', min: 0, max: 100, step: 1, group: 'Texture', help: 'Adds small, slow changes in pitch. At 0%, pitches stay steady.' },
     ], headphones: false, variation: true },
+  ...ELECTRONIC_PROFILES,
+  AMBIENT_PROFILE,
+  ...JOURNEY_PROFILES,
   { id: 'pure-tone', name: 'Pure tone', band: 'TONE', kind: 'tone', family: 'Tones', type: 'Sine tone', subtitle: 'One frequency, simply', defaults: { base: 160 }, controls: [
     { key: 'base', label: 'Tone frequency', unit: 'Hz', min: 20, max: 20000, step: 0.1, scale: 'log', help: 'The pitch sent equally to both channels. Do not increase volume when a tone becomes inaudible.' },
   ], headphones: false, variation: false, description: 'One steady sine tone. Use the slider to explore the pitch or type an exact frequency. Start at a low volume.', how: 'The same tone is sent to both channels. Frequency is measured in hertz, which means cycles each second.', evidence: 'This is a general tone generator. A high or low tone does not reset hearing or provide a proven treatment for anxiety or insomnia.' },
