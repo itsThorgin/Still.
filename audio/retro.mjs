@@ -2,6 +2,7 @@ import { SeededRandom } from './soundscape.mjs';
 import { RetroPlan } from './retro-plan.mjs';
 import { createClearRetroTone, sampleClearRetroTone, createClearRetroDrum, sampleClearRetroDrum } from './retro-clear.mjs';
 import { mixRetroSeed } from '../retro-styles.mjs';
+import { CozyRetroSoundscape } from './retro-cozy.mjs';
 
 const TAU = 2 * Math.PI;
 const SIZE = 2048;
@@ -46,6 +47,7 @@ export class RetroSoundscape {
     this.seed = seed;
     this.selection = this.requestedStyle = params.style;
     this.plan = new RetroPlan(seed, params.style);
+    this.cozy = this.plan.style.sound === 'cozy' ? new CozyRetroSoundscape(sampleRate, this.plan, seed) : null;
     this.noteSerial = 0;
     this.voices = [];
     this.drums = [];
@@ -93,6 +95,7 @@ export class RetroSoundscape {
       this.noteSerial = 0;
       // Remove sounding and pending notes, percussion and filtered room tails at silence.
       this.voices.length = this.drums.length = 0;
+      this.cozy = this.plan.style.sound === 'cozy' ? new CozyRetroSoundscape(this.sampleRate, this.plan, this.seed) : null;
       this.roomLeft.fill(0); this.roomRight.fill(0);
       this.lowLeft = this.lowRight = this.echoLowLeft = this.echoLowRight = this.drumLow = 0;
       this.step = 0;
@@ -125,6 +128,13 @@ export class RetroSoundscape {
     const sr = this.sampleRate, time = frame / sr;
     this.advanceCharacter(frame);
     const characterGain = this.characterGain(frame);
+    if (this.cozy) {
+      this.cozy.sample(params, frame);
+      this.left = this.cozy.left * characterGain; this.right = this.cozy.right * characterGain;
+      this.step = this.cozy.step; this.beats = this.cozy.beats;
+      this.voices = this.cozy.voices; this.drums = this.cozy.drums;
+      return this;
+    }
     if (frame % 128 === 0) {
       const cutoff = Math.min(sr * 0.4, 7200 - params.warmth * 51);
       this.coefficientStep = (1 - Math.exp(-TAU * cutoff / sr) - this.coefficient) / 128;

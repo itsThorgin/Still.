@@ -3,6 +3,9 @@ import { ToneSweep } from './tone-sweep.mjs';
 import { RateMotion } from './rate-motion.mjs';
 import { ChamberSoundscape } from './soundscape.mjs';
 import { RetroSoundscape } from './retro.mjs';
+import { ElectronicSoundscape } from './electronic.mjs';
+import { ApprovedElectronicSoundscape } from './approved-electronic.mjs';
+import { ELECTRONIC_KINDS } from '../electronic-characters.mjs';
 import { nextRetroStyle } from '../retro-styles.mjs';
 import { GardenRotation, GARDEN_FADE_OUT_SECONDS, GARDEN_FADE_IN_SECONDS } from '../garden-options.mjs';
 import { SequencePalette, sequenceToneSeed } from '../sequence-palettes.mjs';
@@ -25,6 +28,7 @@ export class SoundGenerator {
     this.pendingSoundscape = null;
     this.variationVersion = 0;
     this.retro = kind === 'retro' ? new RetroSoundscape(sampleRate, params, seed) : null;
+    this.electronic = ELECTRONIC_KINDS.includes(kind) ? new (['bassmusic','techno'].includes(kind) ? ApprovedElectronicSoundscape : ElectronicSoundscape)(sampleRate, params, seed, kind) : null;
     this.retroRotation = this.retro ? new GardenRotation(sampleRate, seed, params.variationMinutes) : null;
     this.retroTransition = null;
     this.target = { ...params };
@@ -72,6 +76,7 @@ export class SoundGenerator {
     this.sequencePalette?.configure(params.palette ?? 1, this.frames);
     this.rateMotion?.recenter(params.beat, this.frames / this.sampleRate);
     this.soundscape?.setParams(params, this.frames);
+    this.electronic?.setParams(params, this.frames);
     const previousInterval = this.rotation?.minutes;
     this.rotation?.configure(params.variationMinutes, this.frames);
     if (previousInterval !== this.rotation?.minutes) this.pendingSoundscape = null;
@@ -257,6 +262,14 @@ export class SoundGenerator {
         const gain = this.retroGain();
         l = this.retro.left * gain;
         r = this.retro.right * gain;
+      } else if (this.electronic) {
+        this.electronic.sample(p, this.frames);
+        if (this.variationVersion !== this.electronic.variationVersion && this.electronic.variationParams) {
+          Object.assign(this.target, this.electronic.variationParams);
+        }
+        this.variationVersion = this.electronic.variationVersion;
+        l = this.electronic.left;
+        r = this.electronic.right;
       } else if (this.kind === 'noise') {
         this.noiseCounter = (this.noiseCounter + 1) & 255;
         let row = 0;

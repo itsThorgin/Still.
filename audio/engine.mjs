@@ -1,4 +1,7 @@
 import { fadeSeconds, remainingSeconds } from '../state.mjs';
+import { validElectronicMix } from '../electronic-variation.mjs';
+import { ELECTRONIC_KINDS } from '../electronic-characters.mjs';
+import { RETRO_STYLES } from '../retro-styles.mjs';
 import { GainEnvelope } from './envelope.mjs';
 import { normalizeMotion } from './motion.mjs';
 import { ToneSweep } from './tone-sweep.mjs';
@@ -39,6 +42,12 @@ export class AudioEngine {
       this.masterEnvelope = new GainEnvelope(this.master.gain, this.context.currentTime, 0);
       this.sessionEnvelope = new GainEnvelope(this.sessionGain.gain, this.context.currentTime, 0);
       this.sessionGain.connect(this.master).connect(this.context.destination);
+      // A read-only side tap; audible routing and gain envelopes stay intact.
+      this.analyser = this.context.createAnalyser?.();
+      if (this.analyser) {
+        this.analyser.fftSize = 256;
+        this.sessionGain.connect(this.analyser);
+      }
       this.moduleReady = this.context.audioWorklet.addModule(new URL('./processor.mjs', import.meta.url)).catch(async (error) => {
         await this.context.close();
         this.context = null;
@@ -66,17 +75,27 @@ export class AudioEngine {
     const voice = { kind: profile.kind, node: new AudioWorkletNode(this.context, 'still-generator', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { kind: profile.kind, params, seed, motion, sweep, rateMotion: this.rateSettings, monitor: this.monitorSettings, stopTime: this.stopTime } }), gain: this.context.createGain() };
     voice.envelope = new GainEnvelope(voice.gain.gain, this.context.currentTime, startGain);
     voice.params = { ...params };
+    voice.parameterRevision = 0;
     voice.node.connect(voice.gain).connect(this.sessionGain);
     this.voices.add(voice);
     voice.node.port.onmessage = ({ data }) => {
+      if (data.type === 'bass-stage') {
+        if (voice === this.active && ELECTRONIC_KINDS.includes(voice.kind)) voice.bassStage = data.stage;
+        return;
+      }
       if (data.type === 'garden-choices') {
         if (voice === this.active && this.playing) this.onGardenChoices(data.description);
         return;
       }
       if (data.type === 'variation') {
         if (voice === this.active && this.playing) {
-          if (voice.kind === 'retro' && Number.isInteger(data.style) && data.style >= 0 && data.style <= 10) voice.params.style = data.style;
-          this.onVariation(data);
+          if (voice.kind === 'retro' && Number.isInteger(data.style) && data.style >= 0 && data.style <= RETRO_STYLES.length) voice.params.style = data.style;
+          const mix = data.revision === voice.parameterRevision ? validElectronicMix(voice.kind, data.mix) : null;
+          if (mix) Object.assign(voice.params, mix);
+          const report = { ...data };
+          if (mix) report.mix = mix;
+          else delete report.mix;
+          this.onVariation(report);
         }
         return;
       }
@@ -166,7 +185,12 @@ export class AudioEngine {
     if (frequencyError) { this.stop(frequencyError); return; }
     this.sweepDeadline = null;
     this.active.params = { ...params };
-    this.active.node.port.postMessage({ type: 'parameters', params });
+    this.active.node.port.postMessage({ type: 'parameters', params, revision: ++this.active.parameterRevision });
+  }
+
+  bassPlaybackStage() {
+    if (!this.playing || !ELECTRONIC_KINDS.includes(this.active?.kind)) return '';
+    return { out: 'Fading out previous music', quiet: 'Quiet pause', in: 'Starting fresh' }[this.active.bassStage] ?? '';
   }
 
   setMotion(settings) {

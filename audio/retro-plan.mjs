@@ -1,6 +1,7 @@
 import { SeededRandom } from './soundscape.mjs';
 import { retroStyle, mixRetroSeed } from '../retro-styles.mjs';
 import { COMPANION_FAMILIES, initializeCompanion, companionEvents } from './retro-companion-plan.mjs';
+import { CozyRetroPlan } from './retro-cozy-plan.mjs';
 
 const FAMILIES = {
   1: {
@@ -38,6 +39,7 @@ const FAMILIES = {
 export class RetroPlan {
   constructor(seed, selection = 0) {
     this.style = retroStyle(selection, seed);
+    if (this.style.sound === 'cozy') return new CozyRetroPlan(seed, this.style.value);
     this.character = this.style.family ?? this.style.value;
     this.companion = this.style.sound === 'clear';
     this.family = this.companion ? COMPANION_FAMILIES[this.character] : FAMILIES[this.character];

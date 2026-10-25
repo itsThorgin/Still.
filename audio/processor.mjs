@@ -10,13 +10,17 @@ class StillProcessor extends AudioWorkletProcessor {
     this.needsRateReport = true;
     this.reportedRateMoving = false;
     this.reportedVariation = 0;
+    this.parameterRevision = 0;
     this.reportedGardenPlan = null;
     this.nextReport = 0;
     this.needsReport = true;
     this.reportedMoving = false;
     this.stopTime = config.stopTime ?? Infinity;
     this.port.onmessage = ({ data }) => {
-      if (data.type === 'parameters') this.generator.setParams(data.params);
+      if (data.type === 'parameters') {
+        this.generator.setParams(data.params);
+        this.parameterRevision = data.revision ?? this.parameterRevision + 1;
+      }
       if (data.type === 'motion') this.generator.setMotion(data.settings);
       if (data.type === 'rate-motion') this.generator.setRateMotion(data.settings);
       if (data.type === 'monitor') this.generator.setMonitor(data.settings);
@@ -33,6 +37,14 @@ class StillProcessor extends AudioWorkletProcessor {
       return false;
     }
     this.generator.render(left, right);
+    if (this.generator.electronic) {
+      const electronic = this.generator.electronic;
+      const stage = (electronic.manual ?? electronic.transition)?.phase ?? 'playing';
+      if (stage !== this.reportedBassStage) {
+        this.reportedBassStage = stage;
+        this.port.postMessage({ type: 'bass-stage', stage });
+      }
+    }
     const gardenPlan = this.generator.soundscape?.plan;
     if (gardenPlan?.description && gardenPlan !== this.reportedGardenPlan) {
       this.reportedGardenPlan = gardenPlan;
@@ -40,7 +52,10 @@ class StillProcessor extends AudioWorkletProcessor {
     }
     if (this.generator.variationVersion !== this.reportedVariation) {
       this.reportedVariation = this.generator.variationVersion;
-      this.port.postMessage(this.generator.retro
+      this.port.postMessage(this.generator.electronic
+        ? { type: 'variation', seed: this.generator.electronic.rotation.seed,
+          ...(this.generator.electronic.variationParams ? { mix: this.generator.electronic.variationParams, revision: this.parameterRevision } : {}) }
+        : this.generator.retro
         ? { type: 'variation', seed: this.generator.retroRotation.seed, style: this.generator.retro.selection }
         : { type: 'variation', seed: this.generator.rotation.seed });
     }
