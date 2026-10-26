@@ -37,6 +37,8 @@ Controls depend on the selected sound. Adjust pace, musical layers, tone, effect
 
 Optional automatic changes and listening timers support longer sessions. Settings are saved locally in your browser. Reset preset restores the sound controls; Forget settings clears saved preferences.
 
+Visualizations start off. Use the eye button to show them and the display button to switch between Soft wires, Oscilloscope, Spectrum and Mirror wave. Your choice is saved locally.
+
 ## Listening and evidence
 
 Start quietly. Stop if a sound causes discomfort. Do not increase volume to find an inaudible tone. Loud sound and long exposure can damage hearing. See [NIDCD's hearing safety information](https://www.nidcd.nih.gov/health/noise-induced-hearing-loss).

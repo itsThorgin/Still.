@@ -12,7 +12,7 @@ import { electronicVariationMix, ELECTRONIC_MIX_KEYS, ALL_MIX_SETTINGS, normaliz
 import { profilePresentation, controlSection, controlHelp } from './ui-presentation.mjs';
 import { initializeFocusUI } from './focus-ui.mjs';
 import { musicAbout } from './music-about.mjs';
-import { initializeAudioArtwork, drawRestingArtwork } from './audio-artwork.mjs';
+import { initializeAudioArtwork } from './audio-artwork.mjs';
 
 const $ = (id) => document.getElementById(id);
 const focusUI = initializeFocusUI();
@@ -105,7 +105,11 @@ const engine = new AudioEngine(({ playing, message }) => {
   renderSoundSummary(false);
 });
 engine.setRateMotion(state.rateMotion);
-initializeAudioArtwork(engine, () => drawSignal());
+const artwork = initializeAudioArtwork(engine, {
+  settings: state.visualization,
+  phase: () => (state.seed % 997) / 997 * Math.PI * 2,
+  onChange(settings) { state.visualization = settings; save(); },
+});
 
 function save() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -389,7 +393,7 @@ function syncParameters(editingInput, liveUpdate = false, changedKey = null) {
     if (!liveUpdate || slider !== document.activeElement) slider.value = String(sliderPosition(control, value));
     slider.setAttribute('aria-valuetext', `${Number(shown.toFixed(4))} ${control.unit}`);
     if (input !== editingInput && input !== document.activeElement) input.value = control.step < 1 ? shown.toFixed(1) : String(Math.round(shown));
-    const showCentre = (profile.motionKeys.includes(key) && (state.motion.enabled || liveMoving)) || (key === 'beat' && profile.rateMotion && (state.rateMotion.enabled || liveRateMoving));
+    const showCentre = (profile.motionKeys.includes(key) && (state.motion.enabled || liveMoving)) || (key === 'beat' && profile.kind !== 'soundscape' && profile.rateMotion && (state.rateMotion.enabled || liveRateMoving));
     marker.hidden = !showCentre;
     centre.hidden = !showCentre;
     marker.style.left = `${sliderPosition(control, state.params[key]) / 10}%`;
@@ -406,8 +410,16 @@ function renderRateMotion() {
   $('rate-panel').hidden = !profile.rateMotion;
   if (!profile.rateMotion) return;
   const band = rateBand(state.params.beat);
+  const garden = profile.kind === 'soundscape';
+  $('rate-toggle-label').textContent = garden ? 'Glide binaural frequency' : 'Vary the rhythm slowly';
+  $('rate-title').textContent = garden ? 'Binaural frequency glide' : 'Rate motion';
+  $('rate-toggle-control').className = garden ? 'lock-label' : 'motion-toggle';
+  $('rate-toggle-wrap').classList.toggle('lock-control', garden);
+  $('rate-enabled').setAttribute('aria-describedby', garden ? 'garden-glide-help' : 'rate-help');
   $('rate-enabled').checked = state.rateMotion.enabled;
-  $('rate-settings').hidden = !state.rateMotion.enabled;
+  $('rate-settings').hidden = !garden && !state.rateMotion.enabled;
+  $('rate-speed').disabled = garden && !state.rateMotion.enabled;
+  $('rate-speed-label').textContent = garden ? 'Glide speed' : 'Motion speed';
   $('rate-speed').value = state.rateMotion.speed;
   $('rate-status').textContent = state.rateMotion.enabled ? engine.playing ? 'Motion active' : 'Starts with playback' : liveRateMoving ? 'Returning to your chosen rate' : 'Off';
   $('rate-ranges').textContent = `${band.name}: ${band.low} to ${band.high} Hz. Chosen rate: ${state.params.beat} Hz.${profile.kind === 'soundscape' && state.params.binauralMix === 0 ? ' The binaural layer is off; raise its blend to hear this rhythm.' : ''}`;
@@ -419,10 +431,6 @@ function renderSoundscapeTools() {
   $('soundscape-tools').hidden = !isSoundscape;
   if (!isSoundscape) return;
   $('high-solo').checked = highSolo;
-  const limit = engine.context ? toneLimit(engine.context.sampleRate) : 20000;
-  const low = state.params.highLow;
-  const high = Math.min(limit, state.params.highHigh);
-  $('upper-output').textContent = high < low ? `The selected upper range is above this output's ${limit.toLocaleString('en-US')} Hz limit and will be silent.` : `Upper layer: ${formatFrequency(low)} to ${formatFrequency(high)} Hz${engine.context ? ' on this output' : ' where supported by your audio output'}. Blend: ${state.params.highMix}%.`;
 }
 
 function renderMotion() {
@@ -521,7 +529,7 @@ function renderGardenChoices() {
   if (panel.hidden) return;
   const report = gardenReport;
   const summary = $('garden-choice-summary');
-  $('garden-instruments').hidden = !report;
+  $('garden-instruments').disabled = !report;
   if (!report) {
     const text = engine.playing ? 'Choosing instruments…' : 'Start listening to see the chosen instruments and string sounds.';
     if (summary.textContent !== text) summary.textContent = text;
@@ -533,6 +541,7 @@ function renderGardenChoices() {
   const strings = report.stringSounds.length === 1 ? `Strings: ${report.stringSounds[0]}` : report.stringSounds.length ? 'Mixed strings' : 'No strings';
   const text = `${engine.playing ? '' : 'Last played · '}${[arrangement, lead ? `${lead} lead` : null, strings].filter(Boolean).join(' · ')}`;
   if (summary.textContent !== text) summary.textContent = text;
+  $('garden-instruments-summary').textContent = text;
   if (renderedGardenReport === report) return;
   renderedGardenReport = report;
   $('garden-parts').replaceChildren();
@@ -579,7 +588,7 @@ function renderSoundSummary(draw = true) {
 }
 
 function drawSignal() {
-  drawRestingArtwork((state.seed % 997) / 997 * Math.PI * 2);
+  artwork.refresh();
 }
 
 function renderVolume(editing = false) {
@@ -778,6 +787,7 @@ $('forget-button').addEventListener('click', () => {
   engine.stop();
   scanResult = null;
   state = defaultSettings(); variationNumber = 1; lastMessage = '';
+  artwork.configure(state.visualization);
   engine.setMotion(state.motion);
   highSolo = false; engine.setMonitor({ highSolo });
   engine.setRateMotion(state.rateMotion);

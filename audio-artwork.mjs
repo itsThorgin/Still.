@@ -1,15 +1,53 @@
+import {VISUALIZATION_MODES, normalizeVisualization} from './visualization-settings.mjs';
 
-export function waveformPath(samples, secondary = false) {
-  let path = '';
-  const points = 80;
-  for (let i = 0; i <= points; i++) {
-    const position = i / points;
-    const index = Math.min(samples.length - 1, Math.floor(position * (samples.length - 1)));
-    const value = samples[index];
-    const y = 80 + Math.max(-1, Math.min(1, value * 3)) * Math.sin(Math.PI * position) * (secondary ? -30 : 45);
-    path += `${i ? 'L' : 'M'}${(position * 900).toFixed(1)},${y.toFixed(2)} `;
+export function scopeTracePaths(samples, sampleRate = 48000, mirror = false) {
+  let power = 0;
+  for (const sample of samples) power += sample * sample;
+  const rms = Math.sqrt(power / Math.max(1, samples.length));
+  const gain = 78 * Math.sqrt(bandVisualLevel(0, rms)), normalization = Math.max(.001, rms * 1.6);
+  const window = Math.max(1, Math.min(Math.round(sampleRate * .02), samples.length - 258));
+  const end = Math.max(0, samples.length - window - 1);
+  let start = end, slope = 0;
+  for (let i = Math.max(0, end - 256); i < end; i++) {
+    const next = samples[i + 1] - samples[i];
+    if (samples[i] <= 0 && samples[i + 1] > 0 && next > slope) { slope = next; start = i; }
   }
-  return path;
+  let top = '', bottom = '';
+  for (let i = 0; i <= 160; i++) {
+    const p = i / 160, position = start + (mirror ? Math.abs(p - .5) * 2 : p) * window;
+    const index = Math.min(Math.max(0, samples.length - 2), Math.floor(position));
+    const value = (samples[index] ?? 0) + ((samples[index + 1] ?? 0) - (samples[index] ?? 0)) * (position - index);
+    const displacement = mirror ? Math.abs(Math.tanh(value / normalization)) * gain * Math.sin(Math.PI * p) : Math.tanh(value / normalization) * gain;
+    top += `${i ? 'L' : 'M'}${(p * 900).toFixed(1)},${(160 - displacement).toFixed(2)} `;
+    if (mirror) bottom += `${i ? 'L' : 'M'}${(p * 900).toFixed(1)},${(160 + displacement).toFixed(2)} `;
+  }
+  return [top, bottom, ''];
+}
+
+const spectrumFrequency = (position, rate) => 40 * (Math.min(16000, rate * .45) / 40) ** position;
+
+export function spectrumLevels(frequencies, rate = 48000, output = new Float32Array(48)) {
+  const binWidth = rate / (frequencies.length * 2);
+  for (let bar = 0; bar < output.length; bar++) {
+    const low = Math.floor(spectrumFrequency(bar / output.length, rate) / binWidth);
+    const high = Math.min(frequencies.length - 1, Math.ceil(spectrumFrequency((bar + 1) / output.length, rate) / binWidth));
+    let db = -Infinity;
+    for (let bin = low; bin <= high; bin++) if (Number.isFinite(frequencies[bin])) db = Math.max(db, frequencies[bin]);
+    output[bar] = Math.max(0, Math.min(1, (db + 90) / 65));
+  }
+  return output;
+}
+
+export function spectrumTracePaths(levels, rate = 48000) {
+  const paths = ['', '', ''];
+  for (let i = 0; i < levels.length; i++) {
+    const level = Math.max(0, Math.min(1, levels[i]));
+    if (level <= .001) continue;
+    const frequency = spectrumFrequency((i + .5) / levels.length, rate), band = frequency < 250 ? 0 : frequency < 4000 ? 1 : 2;
+    const x = 45 + (i + .5) / levels.length * 810;
+    paths[band] += `M${x.toFixed(1)},270L${x.toFixed(1)},${(270 - level * 205).toFixed(2)} `;
+  }
+  return paths;
 }
 
 export function createBandMeter(sampleRate = 48000) {
@@ -90,21 +128,28 @@ export function sampledBandTracePath(band, samples, source, sampleRate = 48000, 
   return path;
 }
 
-export function drawRestingArtwork(phase = 0) {
+export function drawRestingArtwork(phase = 0, mode = 'wires') {
+  const traces = mode === 'wires' ? null : scopeTracePaths(new Float32Array(2), 48000, mode === 'mirror');
   for(const [band,id] of ['wave-primary','wave-secondary','wave-high'].entries()) {
-    document.getElementById(id)?.setAttribute('d',bandTracePath(band,.23-band*.025,phase));
+    document.getElementById(id)?.setAttribute('d',traces ? traces[band] : bandTracePath(band,.23-band*.025,phase));
   }
+  for (const id of ['spectrum-low','spectrum-mid','spectrum-high']) document.getElementById(id)?.setAttribute('d','');
 }
 
-export function initializeAudioArtwork(engine, restore) {
-  if (!globalThis.requestAnimationFrame || !globalThis.matchMedia) return;
+export function initializeAudioArtwork(engine, {settings, onChange = () => {}, phase = () => 0} = {}) {
   const art = document.getElementById('audio-artwork');
+  const display = document.getElementById('visualization-display');
+  const toggle = document.getElementById('visualization-toggle'), modeButton = document.getElementById('visualization-mode');
+  const name = document.getElementById('visualization-name');
   const paths = ['wave-primary','wave-secondary','wave-high'].map(id=>document.getElementById(id));
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  const bars = ['spectrum-low','spectrum-mid','spectrum-high'].map(id=>document.getElementById(id));
+  const reduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
   const samples = new Float32Array(2048), levels = new Float32Array(3), measured = new Float32Array(3);
   const bands=Array.from({length:3},()=>new Float32Array(samples.length));
+  const frequencies = new Float32Array(1024), barLevels = new Float32Array(48), barTargets = new Float32Array(48);
+  let options = normalizeVisualization(settings);
   let frame = null, last = null, lastTick = -1, active = false, meterRate = 0, meter;
-  function enabled() { return engine.playing && !document.hidden && !reduced.matches && !!engine.analyser; }
+  function enabled() { return options.enabled && engine.playing && !document.hidden && !reduced?.matches && !!engine.analyser && !!globalThis.requestAnimationFrame; }
   function draw(now) {
     frame = null;
     if (!enabled()) { reconcile(); return; }
@@ -126,14 +171,23 @@ export function initializeAudioArtwork(engine, restore) {
         shared+=levels[band]/3;
       }
       art.style.setProperty('--audio-light',(.35+shared*.2).toFixed(3));
-      for(let band=0;band<3;band++) {
-        paths[band]?.setAttribute('d',sampledBandTracePath(band,bands[band],samples,rate,levels[band],measured[band],strongest));
-        art.setAttribute(['data-low-energy','data-mid-energy','data-high-energy'][band],levels[band].toFixed(4));
+      for(let band=0;band<3;band++) art.setAttribute(['data-low-energy','data-mid-energy','data-high-energy'][band],levels[band].toFixed(4));
+      if (options.mode === 'spectrum') {
+        frequencies.fill(-Infinity);
+        engine.analyser.getFloatFrequencyData?.(frequencies);
+        spectrumLevels(frequencies,rate,barTargets);
+        for (let i=0;i<barLevels.length;i++) barLevels[i]=barTargets[i]>=barLevels[i]?barTargets[i]:barTargets[i]+(barLevels[i]-barTargets[i])*Math.exp(-elapsed/.1);
+        const traces=spectrumTracePaths(barLevels,rate);
+        bars.forEach((path,i)=>path?.setAttribute('d',traces[i]));
+      } else {
+        const traces=options.mode==='wires' ? bands.map((band,i)=>sampledBandTracePath(i,band,samples,rate,levels[i],measured[i],strongest)) : scopeTracePaths(samples,rate,options.mode==='mirror');
+        paths.forEach((path,i)=>path?.setAttribute('d',traces[i]));
       }
     }
     frame = requestAnimationFrame(draw);
   }
   function reconcile() {
+    art?.setAttribute('data-animation',enabled()?'running':'paused');
     if (enabled()) {
       active = true;
       if (frame === null) frame = requestAnimationFrame(draw);
@@ -142,13 +196,35 @@ export function initializeAudioArtwork(engine, restore) {
       frame = null;
       if (active) {
         active = false; levels.fill(0); last = null; lastTick = -1;
+        for (const key of ['data-low-energy','data-mid-energy','data-high-energy']) art.setAttribute(key,'0');
         art.style.setProperty('--audio-light', '.35');
-        restore();
+        barLevels.fill(0);
+        if(options.enabled)drawRestingArtwork(phase(),options.mode);
       }
     }
   }
   document.addEventListener('visibilitychange', reconcile);
-  reduced.addEventListener('change', reconcile);
-  
+  reduced?.addEventListener('change', reconcile);
+  function configure(settings) {
+    options=normalizeVisualization(settings);
+    art?.setAttribute('data-mode',options.mode);art?.setAttribute('data-enabled',String(options.enabled));
+    if(display)display.hidden=!options.enabled;
+    const action=options.enabled?'Hide visualization':'Show visualization';
+    toggle?.setAttribute('aria-pressed',String(options.enabled));toggle?.setAttribute('aria-label',action);if(toggle)toggle.title=action;
+    const index=VISUALIZATION_MODES.findIndex(mode=>mode.value===options.mode),current=VISUALIZATION_MODES[index],next=VISUALIZATION_MODES[(index+1)%VISUALIZATION_MODES.length];
+    if(name)name.textContent=options.enabled?current.label:'Visualization off';
+    if(modeButton){modeButton.disabled=!options.enabled;modeButton.title=options.enabled?`${current.label}. Next: ${next.label}`:'Show visualization to change its mode';}
+    levels.fill(0);barLevels.fill(0);last=null;lastTick=-1;
+    if(options.enabled)drawRestingArtwork(phase(),options.mode);
+    reconcile();
+  }
+  toggle?.addEventListener('click',()=>{configure({...options,enabled:!options.enabled});onChange({...options});});
+  modeButton?.addEventListener('click',()=>{
+    if(!options.enabled)return;
+    const index=VISUALIZATION_MODES.findIndex(mode=>mode.value===options.mode);
+    configure({...options,mode:VISUALIZATION_MODES[(index+1)%VISUALIZATION_MODES.length].value});onChange({...options});
+  });
   setInterval(reconcile, 250);
+  configure(options);
+  return {configure,refresh(){if(options.enabled&&!active)drawRestingArtwork(phase(),options.mode);reconcile();}};
 }

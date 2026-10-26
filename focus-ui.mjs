@@ -4,7 +4,9 @@ export function initializeFocusUI() {
   const $ = id => document.getElementById(id);
   let available = ['mix'], persistentVariation = false;
   const picker = $('sound-picker'), timer = $('timer-dialog');
+  const instruments = $('garden-instruments-dialog');
   const pair = $('settings-pair');
+  const ratePanel = $('rate-panel');
   let sizeFrame = null;
   function sizeVariationButtons() {
     const panel = $('music-variation')?.parentElement;
@@ -42,7 +44,7 @@ export function initializeFocusUI() {
       panel.setAttribute('aria-hidden', String(!active));
       panel.inert = !active;
     }
-    pair.hidden = !['mix','sound'].includes(section);
+    pair.hidden = !['mix','sound','upper'].includes(section);
     scheduleSizing();
     if (focus) $('tab-' + section).focus();
   }
@@ -50,7 +52,9 @@ export function initializeFocusUI() {
   $('library-close').addEventListener('click', () => close(picker));
   $('timer-open').addEventListener('click', () => open(timer));
   $('timer-close').addEventListener('click', () => close(timer));
-  for (const dialog of [picker, timer]) dialog.addEventListener('click', event => {
+  $('garden-instruments').addEventListener('click', () => open(instruments));
+  $('garden-instruments-close').addEventListener('click', () => close(instruments));
+  for (const dialog of [picker, timer, instruments]) dialog.addEventListener('click', event => {
     if (event.target !== dialog) return;
     const rect = dialog.getBoundingClientRect();
     if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) close(dialog);
@@ -73,22 +77,25 @@ export function initializeFocusUI() {
       document.body.dataset.profileKind = profile.kind;
       persistentVariation = profile.family === 'Music' && profile.variation;
       document.body.dataset.persistentVariation = String(persistentVariation);
-      const advancedVariation = profile.rateMotion || profile.motionKeys.length > 0;
+      const advancedVariation = (profile.rateMotion && profile.kind !== 'soundscape') || profile.motionKeys.length > 0;
       available = settingsSections(profile).filter(section => section !== 'variation' || !persistentVariation || advancedVariation);
       pair.dataset.reserve = String(profile.family === 'Music' && available.includes('sound'));
       const musicVariation = $('music-variation');
       musicVariation.hidden = !persistentVariation;
+      if (profile.kind === 'soundscape') $('garden-rate-slot').append(ratePanel);
+      else $('settings-variation').insertBefore(ratePanel, $('motion-panel'));
       for (const id of ['parameters-variation', 'variation-row']) {
         if (persistentVariation) musicVariation.append($(id));
         else $('settings-variation').insertBefore($(id), $('rate-panel'));
       }
-      $('tab-variation').textContent = persistentVariation && profile.rateMotion ? 'Rhythm' : 'Variation';
+      $('tab-variation').textContent = 'Variation';
       $('tab-mix').textContent = primarySectionLabel(profile);
       $('tab-sound').textContent = profile.kind === 'tone' ? 'Explore pitch' : primarySectionLabel(profile) === 'Sound' ? 'Details' : 'Sound';
       $('quick-new-variation').hidden = !profile.variation;
       $('primary-controls').hidden = !profile.controls.some(control => ['style', 'scene', 'tempo', 'influence', 'palette'].includes(control.key));
       selectSection('mix');
       close(picker);
+      close(instruments);
     },
     closePicker() { close(picker); },
     closeTimer() { close(timer); },

@@ -2,6 +2,7 @@ import { getProfile } from './profiles.mjs';
 import { normalizeMotion, restoreMotion } from './audio/motion.mjs';
 import { normalizeRateMotion } from './audio/rate-motion.mjs';
 import { normalizeMixMask } from './electronic-variation.mjs';
+import { normalizeVisualization } from './visualization-settings.mjs';
 
 export const STORAGE_KEY = 'still.settings.v1';
 export const VOLUME_POLICY = 2;
@@ -46,7 +47,7 @@ export function allowedTimer(seconds) {
 
 export function defaultSettings() {
   const profile = getProfile('low-gamma');
-  return { profileId: profile.id, params: { ...profile.defaults }, volume: DEFAULT_VOLUME, volumePolicy: VOLUME_POLICY, muted: false, timer: null, locked: false, seed: 1, motion: normalizeMotion(), rateMotion: normalizeRateMotion() };
+  return { profileId: profile.id, params: { ...profile.defaults }, volume: DEFAULT_VOLUME, volumePolicy: VOLUME_POLICY, muted: false, timer: null, locked: false, seed: 1, motion: normalizeMotion(), rateMotion: normalizeRateMotion(), visualization: normalizeVisualization() };
 }
 
 export function parseSettings(text) {
@@ -59,7 +60,7 @@ export function parseSettings(text) {
     const volume = input.volumePolicy === VOLUME_POLICY ? savedVolume : Math.min(DEFAULT_VOLUME, savedVolume);
     const params = normalizeParams(profile, input.params && typeof input.params === 'object' ? input.params : {});
     const motion = restoreMotion(input.motion, profile.controls.filter((control) => profile.motionKeys.includes(control.key)), params);
-    return { profileId: profile.id, params, volume, volumePolicy: VOLUME_POLICY, muted: input.muted === true, timer: allowedTimer(input.timer) ? input.timer : null, locked: input.locked === true, seed: Number.isInteger(input.seed) && input.seed > 0 && input.seed <= 0xffffffff ? input.seed : 1, motion, rateMotion: normalizeRateMotion(input.rateMotion) };
+    return { profileId: profile.id, params, volume, volumePolicy: VOLUME_POLICY, muted: input.muted === true, timer: allowedTimer(input.timer) ? input.timer : null, locked: input.locked === true, seed: Number.isInteger(input.seed) && input.seed > 0 && input.seed <= 0xffffffff ? input.seed : 1, motion, rateMotion: normalizeRateMotion(input.rateMotion), visualization: normalizeVisualization(input.visualization) };
   } catch { return fallback; }
 }
 
