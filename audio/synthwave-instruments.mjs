@@ -34,6 +34,9 @@ function tableFor(p,count){
   }
   tables.set(key,table);return table;
 }
+export function prepareSynthwaveTables(){
+  for(const p of Object.values(SYNTHWAVE_INSTRUMENTS))for(const count of COUNTS)tableFor(p,count);
+}
 export function createSynthwaveTone(event,rate,duration,identity,tempo=100){
   const p=SYNTHWAVE_INSTRUMENTS[event.instrument];if(!p)return null;
   const count=COUNTS.filter(n=>event.frequency*1.02*n<rate*.44).at(-1);if(!count)return null;

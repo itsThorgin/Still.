@@ -25,6 +25,7 @@ export class AudioEngine {
     this.deadline = null;
     this.sweepDeadline = null;
     this.session = 0;
+    this.reporting = true;
   }
 
   async prepare() {
@@ -72,7 +73,7 @@ export class AudioEngine {
 
   makeVoice(profile, params, seed, startGain = 1, sweep) {
     const motion = { ...this.motionSettings, controls: profile.controls.filter((control) => profile.motionKeys.includes(control.key)) };
-    const voice = { kind: profile.kind, node: new AudioWorkletNode(this.context, 'still-generator', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { kind: profile.kind, params, seed, motion, sweep, rateMotion: this.rateSettings, monitor: this.monitorSettings, stopTime: this.stopTime } }), gain: this.context.createGain() };
+    const voice = { kind: profile.kind, node: new AudioWorkletNode(this.context, 'still-generator', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { kind: profile.kind, params, seed, motion, sweep, rateMotion: this.rateSettings, monitor: this.monitorSettings, stopTime: this.stopTime, reporting: this.reporting } }), gain: this.context.createGain() };
     voice.envelope = new GainEnvelope(voice.gain.gain, this.context.currentTime, startGain);
     voice.params = { ...params };
     voice.parameterRevision = 0;
@@ -218,6 +219,11 @@ export class AudioEngine {
   setMonitor(settings) {
     this.monitorSettings = { highSolo: settings.highSolo === true };
     if (this.playing && this.active) this.active.node.port.postMessage({ type: 'monitor', settings: this.monitorSettings });
+  }
+
+  setReporting(enabled) {
+    this.reporting = enabled !== false;
+    if (this.playing && this.active) this.active.node.port.postMessage({ type: 'reporting', enabled: this.reporting });
   }
 
   validateSweep(profile, sweep) {

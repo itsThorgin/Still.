@@ -69,18 +69,21 @@ const engine = new AudioEngine(({ playing, message }) => {
 }, ({ params, moving }) => {
   liveParams = state.motion.enabled || moving ? params : null;
   liveMoving = moving;
+  if (document.hidden) return;
   syncParameters(undefined, true);
   renderMotion();
   renderSoundSummary(false);
 }, (report) => {
   liveSweep = report;
   liveParams = report.params;
+  if (document.hidden) return;
   syncParameters(undefined, true);
   renderSoundSummary(false);
   renderToneTools();
 }, ({ params, moving }) => {
   liveParams = state.rateMotion.enabled || moving ? params : null;
   liveRateMoving = moving;
+  if (document.hidden) return;
   syncParameters(undefined, true);
   renderRateMotion();
   renderSoundSummary(false);
@@ -90,21 +93,24 @@ const engine = new AudioEngine(({ playing, message }) => {
   if (kind === 'retro') {
     if (!Number.isInteger(style) || style < 0 || style > RETRO_STYLES.length) return;
     state.params.style = style;
-    syncParameters();
+    if (!document.hidden) syncParameters();
   }
   if (ELECTRONIC_KINDS.includes(kind) && mix) {
     state.params = normalizeParams(getProfile(state.profileId), { ...state.params, ...mix });
-    syncParameters();
+    if (!document.hidden) syncParameters();
   }
   state.seed = seed; variationNumber++;
+  save();
+  if (document.hidden) return;
   $('variation-id').textContent = String(variationNumber).padStart(3, '0');
-  renderSoundSummary(); save();
+  renderSoundSummary();
 }, (description) => {
   if (getProfile(state.profileId).kind !== 'soundscape') return;
   gardenReport = description;
-  renderSoundSummary(false);
+  if (!document.hidden) renderSoundSummary(false);
 });
 engine.setRateMotion(state.rateMotion);
+engine.setReporting(!document.hidden);
 const artwork = initializeAudioArtwork(engine, {
   settings: state.visualization,
   phase: () => (state.seed % 997) / 997 * Math.PI * 2,
@@ -795,8 +801,15 @@ $('forget-button').addEventListener('click', () => {
   renderProfile(); renderVolume(); renderTimers(); renderPlayback();
   showNotice('Saved settings cleared. Default settings restored.');
 });
-setInterval(() => { engine.checkDeadline(); renderPlayback(); }, 1000);
-document.addEventListener('visibilitychange', () => { engine.checkDeadline(); renderPlayback(); });
-window.addEventListener('pageshow', () => { engine.checkDeadline(); renderPlayback(); });
+setInterval(() => { engine.checkDeadline(); if (!document.hidden) renderPlayback(); }, 1000);
+function refreshVisiblePlayback() {
+  engine.setReporting(!document.hidden);
+  engine.checkDeadline();
+  if (document.hidden) return;
+  syncParameters(); renderMotion(); renderRateMotion(); renderSoundSummary(); renderToneTools(); renderPlayback();
+  $('variation-id').textContent = String(variationNumber).padStart(3, '0');
+}
+document.addEventListener('visibilitychange', refreshVisiblePlayback);
+window.addEventListener('pageshow', refreshVisiblePlayback);
 window.addEventListener('pagehide', () => engine.stop());
 renderProfile(); renderVolume(); renderTimers(); renderPlayback();

@@ -31,6 +31,7 @@ export class SoundGenerator {
     this.retroRotation = this.retro ? new GardenRotation(sampleRate, seed, params.variationMinutes) : null;
     this.retroTransition = null;
     this.target = { ...params };
+    this.parameterKeys = Object.keys(this.target);
     this.renderTarget = this.target;
     this.motion = motion?.controls?.length ? new GentleMotion(params, motion.controls, seed, motion) : null;
     this.sweep = kind === 'tone' && sweep ? new ToneSweep(sweep.mode, sweep.high, sampleRate) : null;
@@ -71,6 +72,7 @@ export class SoundGenerator {
     this.sweep = null;
     const previousStyle = this.target.style;
     this.target = { ...params };
+    this.parameterKeys = Object.keys(this.target);
     this.motion?.recenter(params, this.frames / this.sampleRate);
     this.sequencePalette?.configure(params.palette ?? 1, this.frames);
     this.rateMotion?.recenter(params.beat, this.frames / this.sampleRate);
@@ -215,7 +217,7 @@ export class SoundGenerator {
 
   render(left, right) {
     const sr = this.sampleRate;
-    const keys = Object.keys(this.target);
+    const keys = this.parameterKeys;
     for (let i = 0; i < left.length; i++) {
       if (this.motion && this.frames % 128 === 0) this.renderTarget = this.motion.sample(this.frames / sr);
       for (const key of keys) this.params[key] += (this.renderTarget[key] - this.params[key]) * this.smooth;
@@ -263,6 +265,7 @@ export class SoundGenerator {
         this.electronic.sample(p, this.frames);
         if (this.variationVersion !== this.electronic.variationVersion && this.electronic.variationParams) {
           Object.assign(this.target, this.electronic.variationParams);
+          this.parameterKeys = Object.keys(this.target);
         }
         this.variationVersion = this.electronic.variationVersion;
         l = this.electronic.left;
