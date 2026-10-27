@@ -22,6 +22,10 @@ export class AudioEngine {
     this.active = null;
     this.voices = new Set();
     this.playing = false;
+    this.paused = false;
+    this.interrupted = false;
+    this.resumeRequest = null;
+    this.pauseRequest = null;
     this.deadline = null;
     this.sweepDeadline = null;
     this.session = 0;
@@ -29,7 +33,7 @@ export class AudioEngine {
   }
 
   async prepare() {
-    if (!this.context) {
+    if (!this.context || this.context.state === 'closed') {
       const AudioContextClass = globalThis.AudioContext ?? globalThis.webkitAudioContext;
       if (!AudioContextClass) throw playbackError('This browser does not support the required audio features.');
       this.context = new AudioContextClass({ latencyHint: 'playback' });
@@ -40,9 +44,11 @@ export class AudioEngine {
       }
       this.master = this.context.createGain();
       this.sessionGain = this.context.createGain();
+      this.transportGain = this.context.createGain();
       this.masterEnvelope = new GainEnvelope(this.master.gain, this.context.currentTime, 0);
       this.sessionEnvelope = new GainEnvelope(this.sessionGain.gain, this.context.currentTime, 0);
-      this.sessionGain.connect(this.master).connect(this.context.destination);
+      this.transportEnvelope = new GainEnvelope(this.transportGain.gain, this.context.currentTime, 0);
+      this.sessionGain.connect(this.transportGain).connect(this.master).connect(this.context.destination);
       
       this.analyser = this.context.createAnalyser?.();
       if (this.analyser) {
@@ -54,13 +60,129 @@ export class AudioEngine {
         this.context = null;
         throw error;
       });
-      this.context.onstatechange = () => {
-        if (this.playing && this.context.state !== 'running') this.stop('Playback was interrupted. Select Start listening to begin again.');
-      };
+      const context = this.context;
+      context.onstatechange = () => { if (this.context === context) this.contextStateChanged(); };
     }
     await this.moduleReady;
     await this.context.resume();
     if (this.context.state !== 'running') throw playbackError('Audio could not start. Check this browser\'s sound permissions.');
+  }
+
+  notify(message = '') {
+    this.onChange({ playing: this.playing, paused: this.paused, interrupted: this.interrupted, message });
+  }
+
+  contextStateChanged() {
+    if (!this.playing) return;
+    this.checkDeadline();
+    if (!this.playing) return;
+    if (this.context.state === 'closed') {
+      this.stop('Playback was interrupted. Select Start listening to begin again.');
+    } else if (this.context.state === 'running') {
+      if (this.paused && !this.resumeRequest) {
+        this.context.suspend().catch(() => {});
+      } else if (this.paused || this.interrupted) {
+        this.restorePlayback();
+      }
+    } else if (!this.paused && !this.interrupted) {
+      this.interrupted = true;
+      this.transportEnvelope.hold(this.context.currentTime);
+      this.transportEnvelope.set(0, this.context.currentTime);
+      this.notify('Playback interrupted. Select Resume listening to continue.');
+    }
+  }
+
+  pause() {
+    this.checkDeadline();
+    if (!this.playing || !this.active || this.paused) return;
+    this.paused = true;
+    this.interrupted = false;
+    this.resumeRequest = null;
+    const request = this.pauseRequest = { session: this.session };
+    const now = this.context.currentTime;
+    this.transportEnvelope.hold(now);
+    this.transportEnvelope.ramp(0, now + 0.04);
+    this.notify();
+    setTimeout(() => {
+      if (this.pauseRequest === request && this.session === request.session && this.playing && this.paused) {
+        this.context.suspend().catch(() => {});
+      }
+    }, 60);
+  }
+
+  async resume() {
+    this.checkDeadline();
+    if (!this.playing || !this.active) return false;
+    if (this.context.state === 'closed') {
+      this.stop('Playback was interrupted. Select Start listening to begin again.');
+      return false;
+    }
+    if (this.resumeRequest) return this.resumeRequest.promise;
+    if (!this.paused && !this.interrupted && this.context.state === 'running') return true;
+    const request = this.resumeRequest = { context: this.context, session: this.session };
+    this.pauseRequest = null;
+    // The gate stays silent until the current request and deadlines are checked.
+    request.promise = (async () => {
+      try {
+        await request.context.resume();
+        if (this.resumeRequest !== request || this.session !== request.session || !this.playing) return false;
+        this.checkDeadline();
+        if (!this.playing) return false;
+        if (request.context.state !== 'running') {
+          this.notify('Playback interrupted. Select Resume listening to continue.');
+          return false;
+        }
+        if (this.paused || this.interrupted) this.restorePlayback();
+        return true;
+      } catch {
+        if (this.resumeRequest === request && this.playing) this.notify('Audio could not resume. Select Resume listening to try again.');
+        return false;
+      } finally {
+        if (this.resumeRequest === request) this.resumeRequest = null;
+      }
+    })();
+    return request.promise;
+  }
+
+  restorePlayback() {
+    this.checkDeadline();
+    if (!this.playing || !this.active) return;
+    const now = this.context.currentTime;
+    // Sleep timers use elapsed wall time, including time spent suspended.
+    if (this.deadline !== null) {
+      const remaining = Math.max(0, (this.deadline - Date.now()) / 1000);
+      this.stopTime = now + remaining;
+      this.sessionEnvelope.hold(now);
+      const fade = fadeSeconds(this.duration);
+      this.sessionEnvelope.set(Math.min(1, remaining / fade), now);
+      if (remaining > fade) this.sessionEnvelope.set(1, this.stopTime - fade);
+      this.sessionEnvelope.ramp(0, this.stopTime);
+    }
+    this.paused = this.interrupted = false;
+    this.active.recoveredSweep = this.sweepDeadline !== null;
+    this.updateActiveStopTime();
+    this.restoreTransport();
+    this.notify();
+  }
+
+  restoreTransport(initial = false) {
+    if (this.paused || this.interrupted) return;
+    const now = this.context.currentTime;
+    this.transportEnvelope.hold(now);
+    const remaining = this.sweepDeadline === null || !this.active?.recoveredSweep ? Infinity : Math.max(0, (this.sweepDeadline - Date.now()) / 1000);
+    this.transportEnvelope.ramp(1, now + (initial ? 0 : Math.min(0.04, remaining / 2)));
+    if (Number.isFinite(remaining)) {
+      this.transportEnvelope.set(1, now + Math.max(remaining / 2, remaining - 0.25));
+      this.transportEnvelope.ramp(0, now + remaining);
+    }
+  }
+
+  updateActiveStopTime() {
+    if (!this.active) return;
+    const sweepTime = this.sweepDeadline === null ? Infinity : this.context.currentTime + Math.max(0, (this.sweepDeadline - Date.now()) / 1000);
+    const time = Math.min(this.stopTime, sweepTime);
+    this.active.stopReason = sweepTime < this.stopTime ? 'sweep' : 'timer';
+    this.active.node.port.postMessage({ type: 'stop-time', time: Number.isFinite(time) ? time : null });
   }
 
   setVolume(volume, muted) {
@@ -115,9 +237,9 @@ export class AudioEngine {
       if (data.type !== 'ended') return;
       const wasActive = voice === this.active;
       this.releaseVoice(voice);
-      if (wasActive && this.playing) this.finish(data.reason === 'sweep' ? 'Pitch sweep complete.' : 'Timer complete.');
+      if (wasActive && this.playing) this.finish(data.reason === 'sweep' || voice.stopReason === 'sweep' ? 'Pitch sweep complete.' : 'Timer complete.');
     };
-    voice.node.onprocessorerror = () => this.stop('An audio error stopped playback. Select Start listening to try again.');
+    voice.node.onprocessorerror = () => { if (this.voices.has(voice)) this.stop('An audio error stopped playback. Select Start listening to try again.'); };
     return voice;
   }
 
@@ -144,7 +266,7 @@ export class AudioEngine {
       gain.set(1, this.stopTime - fadeSeconds(duration));
       gain.ramp(0, this.stopTime);
     }
-    if (this.active) this.active.node.port.postMessage({ type: 'stop-time', time: Number.isFinite(this.stopTime) ? this.stopTime : null });
+    this.updateActiveStopTime();
   }
 
   play(profile, params, seed, duration, volume, muted, motion, sweep) {
@@ -153,6 +275,8 @@ export class AudioEngine {
     if (frequencyError) throw playbackError(frequencyError);
     const sweepPlan = this.validateSweep(profile, sweep);
     this.playing = true;
+    this.paused = this.interrupted = false;
+    this.resumeRequest = this.pauseRequest = null;
     this.motionSettings = normalizeMotion(motion);
     this.session++;
     this.startedAt = Date.now();
@@ -161,23 +285,30 @@ export class AudioEngine {
     this.sweepDeadline = sweepPlan ? Date.now() + sweepPlan.duration * 1000 : null;
     this.active = this.makeVoice(profile, params, seed, 0, sweep);
     this.active.envelope.ramp(1, this.context.currentTime + 0.25);
-    this.onChange({ playing: true, message: '' });
+    this.restoreTransport(true);
+    this.notify();
   }
 
   changeProfile(profile, params, seed, sweep) {
+    this.checkDeadline();
     if (!this.playing) return;
     const frequencyError = this.frequencyError(profile.kind, params);
     if (frequencyError) { this.stop(frequencyError); return; }
     const sweepPlan = this.validateSweep(profile, sweep);
     const now = this.context.currentTime;
-    for (const voice of this.voices) {
-      voice.envelope.hold(now);
-      voice.envelope.ramp(0, now + 0.25);
-      voice.node.port.postMessage({ type: 'stop-time', time: now + 0.27 });
+    if (this.paused || this.interrupted || this.context.state !== 'running') {
+      for (const voice of [...this.voices]) this.releaseVoice(voice);
+    } else {
+      for (const voice of this.voices) {
+        voice.envelope.hold(now);
+        voice.envelope.ramp(0, now + 0.25);
+        voice.node.port.postMessage({ type: 'stop-time', time: now + 0.27 });
+      }
     }
     this.sweepDeadline = sweepPlan ? Date.now() + sweepPlan.duration * 1000 : null;
     this.active = this.makeVoice(profile, params, seed, 0, sweep);
     this.active.envelope.ramp(1, now + 0.25);
+    this.restoreTransport();
   }
 
   setParams(params) {
@@ -185,6 +316,8 @@ export class AudioEngine {
     const frequencyError = this.frequencyError(this.active.kind, params);
     if (frequencyError) { this.stop(frequencyError); return; }
     this.sweepDeadline = null;
+    if (this.active.stopReason === 'sweep') this.updateActiveStopTime();
+    this.restoreTransport();
     this.active.params = { ...params };
     this.active.node.port.postMessage({ type: 'parameters', params, revision: ++this.active.parameterRevision });
   }
@@ -234,11 +367,17 @@ export class AudioEngine {
 
   stop(message = '') {
     if (!this.context || !this.playing) return;
+    const immediate = this.paused || this.interrupted || this.context.state !== 'running';
     this.playing = false;
     const now = this.context.currentTime;
     try {
       this.sessionEnvelope.hold(now);
       this.sessionEnvelope.ramp(0, now + 0.15);
+      if (immediate) {
+        this.transportEnvelope.hold(now);
+        this.transportEnvelope.set(0, now);
+        for (const voice of [...this.voices]) this.releaseVoice(voice);
+      }
       for (const voice of this.voices) {
         voice.envelope.hold(now);
         voice.envelope.ramp(0, now + 0.15);
@@ -256,9 +395,11 @@ export class AudioEngine {
 
   finish(message) {
     this.playing = false;
+    this.paused = this.interrupted = false;
+    this.resumeRequest = this.pauseRequest = null;
     this.deadline = null;
     this.sweepDeadline = null;
-    this.onChange({ playing: false, message });
+    this.notify(message);
     const session = this.session;
     setTimeout(() => {
       if (!this.playing && this.session === session && this.context) {
