@@ -13,6 +13,7 @@ import { profilePresentation, controlSection, controlHelp } from './ui-presentat
 import { initializeFocusUI } from './focus-ui.mjs';
 import { musicAbout } from './music-about.mjs';
 import { initializeAudioArtwork } from './audio-artwork.mjs';
+import { initializeMediaSession } from './media-session.mjs';
 
 const $ = (id) => document.getElementById(id);
 const focusUI = initializeFocusUI();
@@ -59,13 +60,14 @@ const engine = new AudioEngine(({ playing, message }) => {
     liveParams = null; liveMoving = false; liveSweep = null; liveRateMoving = false;
   }
   document.body.classList.toggle('is-playing', playing);
+  mediaControls.update();
   syncParameters();
   renderMotion();
   renderRateMotion();
   renderSoundSummary();
   renderPlayback();
   renderLibrary();
-  if (message) showNotice(message);
+  if (message || (playing && !engine.paused && !engine.interrupted)) showNotice(message);
 }, ({ params, moving }) => {
   liveParams = state.motion.enabled || moving ? params : null;
   liveMoving = moving;
@@ -109,6 +111,7 @@ const engine = new AudioEngine(({ playing, message }) => {
   gardenReport = description;
   if (!document.hidden) renderSoundSummary(false);
 });
+const mediaControls = initializeMediaSession(engine);
 engine.setRateMotion(state.rateMotion);
 engine.setReporting(!document.hidden);
 const artwork = initializeAudioArtwork(engine, {
@@ -640,19 +643,22 @@ function renderTimers() {
 
 function renderPlayback() {
   const playing = engine.playing;
+  const suspended = playing && (engine.paused || engine.interrupted);
   const button = $('play-button');
   button.classList.toggle('playing', playing);
   button.disabled = busy;
   button.querySelector('span').textContent = busy ? 'Preparing audio' : playing ? 'Stop listening' : 'Start listening';
   button.querySelector('svg').innerHTML = playing ? '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>' : '<path d="m9 5 11 7-11 7V5Z" fill="currentColor"/>';
-  $('playback-dot').classList.toggle('playing', playing);
+  $('resume-button').hidden = !suspended;
+  $('resume-button').disabled = busy;
+  $('playback-dot').classList.toggle('playing', playing && !suspended);
   const completed = !playing && ['Timer complete.', 'Pitch sweep complete.'].includes(lastMessage);
   const deadline = engine.sweepDeadline === null ? engine.deadline : engine.deadline === null ? engine.sweepDeadline : Math.min(engine.deadline, engine.sweepDeadline);
   const left = completed ? 0 : playing ? remainingSeconds(deadline) : state.timer;
   const timerLeft = playing ? remainingSeconds(engine.deadline) : null;
   const fading = playing && timerLeft !== null && timerLeft <= fadeSeconds(state.timer);
-  $('playback-label').textContent = busy ? 'Getting ready' : fading ? 'Fading to silence' : engine.bassPlaybackStage() || (playing ? 'Playing' : completed ? 'Session complete' : 'Ready');
-  $('playback-detail').textContent = completed ? 'Select Start listening to begin again.' : playing && liveSweep ? 'Stops when the sweep or glide ends.' : state.timer === null ? 'Continuous listening' : playing ? 'Stops at the end of the timer' : 'Timer starts with playback.';
+  $('playback-label').textContent = busy ? 'Getting ready' : suspended ? engine.paused ? 'Paused' : 'Playback interrupted' : fading ? 'Fading to silence' : engine.bassPlaybackStage() || (playing ? 'Playing' : completed ? 'Session complete' : 'Ready');
+  $('playback-detail').textContent = suspended ? 'Select Resume listening to continue. The listening timer keeps counting.' : completed ? 'Select Start listening to begin again.' : playing && liveSweep ? 'Stops when the sweep or glide ends.' : state.timer === null ? 'Continuous listening' : playing ? 'Stops at the end of the timer' : 'Timer starts with playback.';
   $('clock').textContent = left === null ? '∞' : formatClock(left);
   $('clock-label').textContent = completed ? 'COMPLETE' : left === null ? 'NO TIME LIMIT' : playing ? 'REMAINING' : 'SESSION LENGTH';
   $('dialog-stop').hidden = !playing;
@@ -721,6 +727,13 @@ $('play-button').addEventListener('click', async () => {
     engine.stop();
     showNotice(error.userMessage || 'Audio could not start. Try again or reload the page.');
   } finally { busy = false; renderPlayback(); }
+});
+$('resume-button').addEventListener('click', async () => {
+  if (busy) return;
+  busy = true;
+  renderPlayback();
+  try { await engine.resume(); }
+  finally { busy = false; renderPlayback(); }
 });
 $('about-button').addEventListener('click', () => openAbout(state.profileId));
 $('close-dialog').addEventListener('click', () => $('about-dialog').close());
@@ -806,6 +819,7 @@ function refreshVisiblePlayback() {
   engine.setReporting(!document.hidden);
   engine.checkDeadline();
   if (document.hidden) return;
+  if (engine.interrupted && !engine.paused) void engine.resume();
   syncParameters(); renderMotion(); renderRateMotion(); renderSoundSummary(); renderToneTools(); renderPlayback();
   $('variation-id').textContent = String(variationNumber).padStart(3, '0');
 }

@@ -40,6 +40,7 @@ body{min-width:0;background:var(--bg)}
 @media(pointer:coarse){.visualization-button{width:44px;height:44px}}
 .transport{justify-content:center;gap:12px;margin:20px 0 0;flex-wrap:wrap}
 .play-button{min-height:46px;padding:12px 20px;border-radius:10px;font-size:13px}
+#resume-button{min-height:44px}
 .quick-variation{width:44px;height:46px;border-radius:10px;background:#c3dbff0b;border:1px solid #b8d3f723;color:#c5d7ef}
 .volume-panel{width:100%;max-width:none;grid-template-columns:24px minmax(0,1fr) 78px;gap:11px;margin:18px 0 0}
 .volume-number{min-height:36px;background:#09162944;border-color:#a9c8f01a}.volume-number input{font-size:12px}

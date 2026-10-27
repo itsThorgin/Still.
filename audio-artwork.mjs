@@ -149,7 +149,7 @@ export function initializeAudioArtwork(engine, {settings, onChange = () => {}, p
   const frequencies = new Float32Array(1024), barLevels = new Float32Array(48), barTargets = new Float32Array(48);
   let options = normalizeVisualization(settings);
   let frame = null, last = null, lastTick = -1, active = false, meterRate = 0, meter;
-  function enabled() { return options.enabled && engine.playing && !document.hidden && !reduced?.matches && !!engine.analyser && !!globalThis.requestAnimationFrame; }
+  function enabled() { return options.enabled && engine.playing && !engine.paused && !engine.interrupted && !document.hidden && !reduced?.matches && !!engine.analyser && !!globalThis.requestAnimationFrame; }
   function draw(now) {
     frame = null;
     if (!enabled()) { reconcile(); return; }
