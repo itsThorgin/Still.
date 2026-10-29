@@ -32,18 +32,25 @@ export class TechnoRuntime{
   }
   addVoice(e,tempo){
     const identity=gardenHash(this.seed,this.serial++)/4294967296;
-    if(e.drum){if(this.drums.length<this.p.constraints.maxDrums)this.drums.push(createTechnoProductionDrum(e,this.rate,tempo,this.p,identity));return;}
+    if(e.drum){
+      if(this.drums.length<this.p.constraints.maxDrums){
+        const drum=createTechnoProductionDrum(e,this.rate,tempo,this.p,identity),pan=drum.pan??0;
+        drum.mixPanL=Math.sqrt(1-pan);drum.mixPanR=Math.sqrt(1+pan);this.drums.push(drum);
+      }
+      return;
+    }
     // Slides reuse the active acid voice.
     if(e.patch==='acid'&&e.slide&&this.activeAcid&&this.activeAcid.age/this.rate<this.activeAcid.duration){tieTechnoProductionTone(this.activeAcid,e,tempo);return;}
     if(this.voices.length>=this.p.constraints.maxVoices)return;
     const v=createTechnoProductionTone(e,this.rate,tempo,this.p,identity);
+    v.mixPan=v.pan;v.mixPanL=Math.sqrt(1-v.pan);v.mixPanR=Math.sqrt(1+v.pan);
     if(e.patch==='acid')for(const old of this.voices)if(old.patch==='acid'&&old.releaseStart===null){old.releaseStart=old.age;retireBassExpression(old,v.bassExpression.attack);}
     if(e.patch==='acid')this.activeAcid=v;
     if(this.performance.machine){prepareMachineTone(v);preparePatternTone(v,e);}
     if(this.performance.toneShape)prepareToneShape(v);this.voices.push(v);
   }
   sample(params,frame,beats){
-    if(frame%32===0||!this.scene)this.scene=technoProductionScene(this.p,beats/4);
+    if(frame%32===0||!this.scene)this.scene=technoProductionScene(this.p,beats/4,this.scene);
     const scene=this.scene,p=this.p,brightness=params.brightness/100,movement=params.movement/100;
     let l=0,r=0,bass=0,sendL=0,sendR=0,drumL=0,drumR=0,kick=0;
     for(let i=this.voices.length-1;i>=0;i--){
@@ -55,7 +62,8 @@ export class TechnoRuntime{
       else sampleTechnoProductionTone(v,frame,beats,brightness,movement,scene,p);
       const level=v.amplitude*params[v.role]/100;
       if(v.role==='bass'){bass+=v.left*level;continue;}
-      const a=v.left*level*Math.sqrt(1-v.pan),b=v.right*level*Math.sqrt(1+v.pan);l+=a;r+=b;
+      if(v.pan!==v.mixPan){v.mixPan=v.pan;v.mixPanL=Math.sqrt(1-v.pan);v.mixPanR=Math.sqrt(1+v.pan);}
+      const a=v.left*level*v.mixPanL,b=v.right*level*v.mixPanR;l+=a;r+=b;
       const send=v.patch==='chord'?(v.dubThrow??1):v.patch==='pad'?.7:.35;sendL+=a*send;sendR+=b*send;
     }
     for(let i=this.drums.length-1;i>=0;i--){
@@ -68,7 +76,7 @@ export class TechnoRuntime{
         v.started=true;
       }
       const raw=this.performance.toneShape?samplePercussionShape(v):this.performance.hatFade?sampleExpressionDrum(v,sampleTechnoProductionDrum):sampleTechnoProductionDrum(v),x=raw*params.percussion/100;
-      drumL+=x*Math.sqrt(1-(v.pan??0));drumR+=x*Math.sqrt(1+(v.pan??0));
+      drumL+=x*v.mixPanL;drumR+=x*v.mixPanR;
       if(v.drum==='kick')kick+=raw;else if(['metal','conga','tom','snare'].includes(v.drum)){sendL+=x*.06;sendR+=x*.06;}
     }
     if(p.automation.noise>0){

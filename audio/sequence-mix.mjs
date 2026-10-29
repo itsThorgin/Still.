@@ -31,8 +31,10 @@ export class SequenceMix{
     const [a,c,d,e]=this.rooms;
     for(const line of this.rooms){line.low+=this.lpC*(line.buffer[line.index]-line.low);line.value=line.low;}
     const x=a.value,y=c.value,z=d.value,w=e.value;
-    const sums=[x+y+z+w,x-y+z-w,x+y-z-w,x-y-z+w];
-    for(let i=0;i<4;i++){const line=this.rooms[i];line.buffer[line.index]=injection*.22*(i%2?-1:1)+sums[i]*.5*line.gain;line.index=(line.index+1)%line.buffer.length;}
+    for(let i=0;i<4;i++){
+      const line=this.rooms[i],sum=i===0?x+y+z+w:i===1?x-y+z-w:i===2?x+y-z-w:x-y-z+w;
+      line.buffer[line.index]=injection*.22*(i%2?-1:1)+sum*.5*line.gain;line.index=(line.index+1)%line.buffer.length;
+    }
     let echoL=0,echoR=0;
     for(let i=0;i<2;i++){
       const line=this.delays[i],read=line.buffer[line.index];line.low+=this.lpC*(read-line.low);line.hp+=this.hpC*(line.low-line.hp);

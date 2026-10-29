@@ -1,8 +1,10 @@
 import { SoundGenerator } from './synth.mjs';
 import { prepareSynthwaveTables } from './synthwave-instruments.mjs';
+import { prepareSequenceTables } from './pattern-instruments.mjs';
 
 // Build shared tables while the module loads, before any voice starts.
 prepareSynthwaveTables();
+prepareSequenceTables();
 
 class StillProcessor extends AudioWorkletProcessor {
   constructor(options) {

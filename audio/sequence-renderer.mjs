@@ -1,6 +1,7 @@
 import {SequencePlan} from './sequence-plan.mjs';
 import {createSequenceVoice,sampleSequenceVoice,startSequenceVoice,retireSequenceVoice,createSequenceDrum,sampleSequenceDrum,clamp} from './pattern-instruments.mjs';
 import {SequenceMix} from './sequence-mix.mjs';
+const MIX_KEYS=['melody','accompaniment','bass','percussion','brightness','movement','pump','space','width'];
 export class SequenceRenderer{
   constructor(rate,piece,params,seed=42,context='mix'){
     piece={...piece,tempo:piece.kind==='bassmusic'&&piece.id===42?174:(params.tempo??piece.tempo)};
@@ -8,12 +9,15 @@ export class SequenceRenderer{
     this.frames=0;this.beats=0;this.nextStepBeat=0;this.step=0;this.serial=0;this.scheduled=0;
     this.target={...params,tempo:piece.tempo};this.params={...this.target};this.smooth=1-Math.exp(-1/(rate*.025));
     this.plan=new SequencePlan(piece.kind,piece.id,seed);this.voices=[];this.drums=[];
-    this.mix=new SequenceMix(rate,piece);this.activeBass=null;this.activeLead=null;
+    this.mix=new SequenceMix(rate,piece);this.activeBass=null;this.activeLead=null;this.left=this.right=0;
     this.stats={connections:0,retirements:0,maxVoices:0,maxDrums:0,droppedEvents:0};
     this.buses={};this.views=this.mix.views;this.electronic=this;
     this.resetBuses();
   }
-  resetBuses(){for(const k of ['sub','upper','musicL','musicR','chordL','chordR','leadL','leadR','drumL','drumR','sendL','sendR'])this.buses[k]=0;}
+  resetBuses(){
+    const b=this.buses;
+    b.sub=b.upper=b.musicL=b.musicR=b.chordL=b.chordR=b.leadL=b.leadR=b.drumL=b.drumR=b.sendL=b.sendR=0;
+  }
   add(e){
     if(!Number.isFinite(e.amplitude)||e.amplitude<0)throw Error('Bad event');
     const identity=(Math.imul(this.seed^++this.serial,2654435761)>>>0)||1;
@@ -36,13 +40,26 @@ export class SequenceRenderer{
     this.liveKeys??=Object.keys(this.params);
     for(const key of this.liveKeys)this.params[key]=this.target[key]=key==='tempo'?tempo:params[key];
   }
-  clear(){this.voices.length=0;this.drums.length=0;this.activeBass=this.activeLead=null;this.mix=new SequenceMix(this.sampleRate,this.piece);this.views=this.mix.views;}
+  clear(){this.voices.length=0;this.drums.length=0;this.activeBass=this.activeLead=null;this.mix=new SequenceMix(this.sampleRate,this.piece);this.views=this.mix.views;this.left=this.right=0;}
   get voiceCount(){return this.voices.length;}
   render(left,right){
-    const rate=this.sampleRate,keys=['melody','accompaniment','bass','percussion','brightness','movement','pump','space','width'];
     for(let i=0;i<left.length;i++){
-      for(const k of keys)this.params[k]+=(this.target[k]-this.params[k])*this.smooth;
-      const params=this.params;
+      for(const k of MIX_KEYS)this.params[k]+=(this.target[k]-this.params[k])*this.smooth;
+      this.sample(this.params);
+      left[i]=this.left;if(right)right[i]=this.right;
+    }
+  }
+  sampleLive(params){
+    // SoundGenerator has already smoothed these controls for this sample.
+    const tempo=this.kind==='bassmusic'&&this.piece.id===42?174:params.tempo;
+    if(tempo!==this.piece.tempo){this.liveTempoChanged=true;this.piece.tempo=tempo;}
+    this.sample(params);
+    // Preserve the Float32 rounding of the former one-frame output buffers
+    // before the live controller applies its transition gain.
+    this.left=Math.fround(this.left);this.right=Math.fround(this.right);
+  }
+  sample(params){
+      const rate=this.sampleRate;
       while(this.beats+1e-10>=this.nextStepBeat){
         for(const e of this.plan.events(this.step))this.add(e);
         this.step++;this.nextStepBeat=this.step/4;
@@ -80,10 +97,9 @@ export class SequenceRenderer{
       }
       this.mix.process(b,params,this.frames);
       const view=this.views[this.context==='overview'?'mix':this.context]??this.views.mix;
-      left[i]=view.left;if(right)right[i]=view.right;
+      this.left=view.left;this.right=view.right;
       this.stats.maxVoices=Math.max(this.stats.maxVoices,this.voices.length);this.stats.maxDrums=Math.max(this.stats.maxDrums,this.drums.length);
       if(this.onSample)this.onSample(this.frames,this.views,this.buses);
       this.frames++;this.beats=this.liveTempoChanged?this.beats+this.piece.tempo/(rate*60):this.frames*this.piece.tempo/(rate*60);
-    }
   }
 }

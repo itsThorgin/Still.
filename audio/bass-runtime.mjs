@@ -33,7 +33,9 @@ export class BassRuntime{
     if(event.drum){
       if(this.drums.length>=32)return;
       if(event.drum==='hat')for(const d of this.drums)if(d.drum==='open-hat')d.duration=Math.min(d.duration,d.age/rate+.012);
-      this.drums.push(createProductionDrum(event,rate,tempo,p,identity));return;
+      const drum=createProductionDrum(event,rate,tempo,p,identity),pan=drum.pan??0;
+      drum.mixPanL=Math.sqrt(1-pan);drum.mixPanR=Math.sqrt(1+pan);
+      this.drums.push(drum);return;
     }
     if(this.voices.length>=48)return;
     if(event.role==='bass'){const v=createProductionBass(event,rate,tempo,p,identity/4294967296);if(this.performance.bassShape)prepareBassShape(v);this.voices.push(v);return;}
@@ -42,6 +44,7 @@ export class BassRuntime{
     if(voice){
       if(this.performance.upper==='keys')prepareBassForeground(voice,this.character.value,tempo,this.onsetBeat??0,this.seed);
       if(this.performance.upper==='library')prepareLayerBass(voice,this.character,tempo,this.onsetBeat??0);
+      voice.mixPanL=Math.sqrt((1-voice.pan)/2);voice.mixPanR=Math.sqrt((1+voice.pan)/2);
       voice.age=-Math.round((event.delay??0)*60/tempo*rate);this.voices.push(voice);
     }
   }
@@ -62,15 +65,15 @@ export class BassRuntime{
         else if(v.foregroundExpression)sampleBassForeground(v,frame,beats,brightness,movement);
         else if(v.instrumentVoice)sampleInstrumentVoice(v,frame,beats,brightness,movement);
         else sampleElectronicTone(v,frame,beats,brightness,movement);
-        const a=v.left*level*Math.sqrt((1-v.pan)/2),b=v.right*level*Math.sqrt((1+v.pan)/2);
+        const a=v.left*level*v.mixPanL,b=v.right*level*v.mixPanR;
         l+=a;r+=b;sendL+=a*(v.foregroundExpression?.send??1);sendR+=b*(v.foregroundExpression?.send??1);
       }
     }
     for(let i=this.drums.length-1;i>=0;i--){
       const v=this.drums[i];if(v.age/rate>=v.duration){this.drums.splice(i,1);continue;}if(v.age<0){v.age++;continue;}
       if(!v.started){if(v.drum==='kick')this.mix.kickEnvelope=1;v.started=true;}
-      const x=sampleProductionDrum(v)*params.percussion/100,pan=v.pan??0;
-      drumsL+=x*Math.sqrt(1-pan);drumsR+=x*Math.sqrt(1+pan);if(v.drum==='snare'||v.drum==='clap'||v.drum==='tom')room+=x;
+      const x=sampleProductionDrum(v)*params.percussion/100;
+      drumsL+=x*v.mixPanL;drumsR+=x*v.mixPanR;if(v.drum==='snare'||v.drum==='clap'||v.drum==='tom')room+=x;
     }
     if(this.bank){this.bank.sample(params,frame,beats,scene,this.mix.kickEnvelope);l+=this.bank.left;r+=this.bank.right;sendL+=this.bank.sendL;sendR+=this.bank.sendR;}
     if(this.harmonics){this.harmonics.sample(params,frame,beats);upperL=upperL*.20+this.harmonics.left*.80;upperR=upperR*.20+this.harmonics.right*.80;}

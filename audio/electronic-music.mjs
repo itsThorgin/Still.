@@ -11,7 +11,7 @@ export class ElectronicMusic {
     this.rate=rate;this.kind=kind;this.settings={...params};this.requestedStyle=params.style??0;
     this.rotation=new GardenRotation(rate,seed,params.variationMinutes);this.variationVersion=0;
     this.variationParams=null;this.manual=this.transition=null;this.left=this.right=0;
-    this.oneL=new Float32Array(1);this.oneR=new Float32Array(1);this.resetScore();
+    this.resetScore();
   }
   resetScore(){
     this.character=electronicCharacter(this.kind,this.requestedStyle,this.rotation.seed);
@@ -63,8 +63,7 @@ export class ElectronicMusic {
       this.transition=automaticTransition(this.rotation.seed,frame,this.rate);
     const gain=this.manualGain(frame)*bassFadeGain(this.transition,frame);
     if(this.source.piece){
-      this.source.setLiveParams(params);this.source.render(this.oneL,this.oneR);
-      this.left=this.oneL[0]*gain;this.right=this.oneR[0]*gain;
+      e.sampleLive(params);this.left=e.left*gain;this.right=e.right*gain;
     }else{
       e.sample(params,this.localFrame);this.left=e.left*gain;this.right=e.right*gain;
     }

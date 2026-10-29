@@ -53,6 +53,8 @@ export class SoundGenerator {
     this.noteIndex = null;
     this.phraseRemaining = 0;
     this.frames = 0;
+    this.smoothingKeys = [];
+    this.refreshSmoothingKeys();
     for (let i = 0; i < this.noiseRows.length; i++) {
       this.noiseRows[i] = this.random() * 2 - 1;
       this.noiseSum += this.noiseRows[i];
@@ -92,6 +94,20 @@ export class SoundGenerator {
       } else this.retro.setParams(params, this.frames);
     }
     this.renderTarget = this.motion ? this.motion.sample(this.frames / this.sampleRate) : this.target;
+    this.refreshSmoothingKeys();
+  }
+
+  refreshSmoothingKeys() {
+    // Moving controls retain their original per-sample smoothing. Fixed controls
+    // can stop once another smoothing step would leave the value unchanged.
+    this.dynamicParameters = !!(this.motion || this.rateMotion || this.sweep || this.retro);
+    this.smoothingKeys.length = 0;
+    if (this.dynamicParameters) return;
+    for (const key of this.parameterKeys) {
+      const value = this.params[key];
+      const next = value + (this.renderTarget[key] - value) * this.smooth;
+      if (!Object.is(next, value)) this.smoothingKeys.push(key);
+    }
   }
 
   setMotion(settings) {
@@ -217,10 +233,22 @@ export class SoundGenerator {
 
   render(left, right) {
     const sr = this.sampleRate;
-    const keys = this.parameterKeys;
+    const dynamic = this.dynamicParameters;
+    const keys = dynamic ? this.parameterKeys : this.smoothingKeys;
     for (let i = 0; i < left.length; i++) {
       if (this.motion && this.frames % 128 === 0) this.renderTarget = this.motion.sample(this.frames / sr);
-      for (const key of keys) this.params[key] += (this.renderTarget[key] - this.params[key]) * this.smooth;
+      if (dynamic) {
+        for (const key of keys) this.params[key] += (this.renderTarget[key] - this.params[key]) * this.smooth;
+      } else if (keys.length) {
+        let active = 0;
+        for (const key of keys) {
+          const value = this.params[key];
+          const next = value + (this.renderTarget[key] - value) * this.smooth;
+          this.params[key] = next;
+          if (next !== value) keys[active++] = key;
+        }
+        keys.length = active;
+      }
       if (this.sweep) {
         this.params.base = this.sweep.sample(this.frames / sr).frequency;
         this.toneLevel = this.sweep.level;
@@ -266,6 +294,7 @@ export class SoundGenerator {
         if (this.variationVersion !== this.electronic.variationVersion && this.electronic.variationParams) {
           Object.assign(this.target, this.electronic.variationParams);
           this.parameterKeys = Object.keys(this.target);
+          this.refreshSmoothingKeys();
         }
         this.variationVersion = this.electronic.variationVersion;
         l = this.electronic.left;

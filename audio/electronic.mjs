@@ -138,7 +138,8 @@ export class ElectronicSoundscape {
       : this.kind === 'ambient' ? createAmbientTone(event, rate, duration, identity)
       : createElectronicTone(event, rate, duration, identity);
     if (tone) {
-      
+      tone.mixPanL = Math.sqrt((1 - tone.pan) / 2);
+      tone.mixPanR = Math.sqrt((1 + tone.pan) / 2);
       this.voices.push(tone);
     }
   }
@@ -259,15 +260,15 @@ export class ElectronicSoundscape {
       const level = voice.amplitude * params[voice.role] / 100 * (this.ambientLevels?.[voice.role] ?? 1);
       if (voice.role === 'bass') bass += voice.left * level;
       else {
-        const a=voice.left*level*Math.sqrt((1-voice.pan)/2),b=voice.right*level*Math.sqrt((1+voice.pan)/2);
+        const a=voice.left*level*voice.mixPanL,b=voice.right*level*voice.mixPanR;
         left+=a;right+=b;
         if(this.synthwaveColour){
           if(voice.role==='melody'){synthLeadL+=a;synthLeadR+=b;}
           else if(voice.instrument===this.plan.character.pad){synthPadL+=a;synthPadR+=b;}
         }
         if(this.synthwaveMix){const send=voice.role==='melody'?.8:.12;
-          synthSendL+=voice.left*level*Math.sqrt((1-voice.pan)/2)*send;
-          synthSendR+=voice.right*level*Math.sqrt((1+voice.pan)/2)*send;}
+          synthSendL+=a*send;
+          synthSendR+=b*send;}
       }
     }
     

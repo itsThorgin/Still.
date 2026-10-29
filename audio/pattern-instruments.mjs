@@ -12,6 +12,13 @@ function waveTable(harmonics,pulse=false){
   for(let i=0;i<=SIZE;i++)table[i]/=Math.max(1,sum*.65);
   waves.set(key,table);return table;
 }
+export function prepareSequenceTables(){
+  // All valid sequence pitches select one of these shared tables. Prepare them
+  // before playback so a new note or character never builds one in a callback.
+  for(let harmonics=1;harmonics<=16;harmonics++){
+    waveTable(harmonics,false);waveTable(harmonics,true);
+  }
+}
 function lookup(table,phase){phase-=Math.floor(phase);const x=phase*SIZE,i=Math.floor(x);return table[i]+(table[i+1]-table[i])*(x-i);}
 const expRate=(rate,seconds)=>Math.exp(-1/(rate*seconds));
 const bassSpecs={

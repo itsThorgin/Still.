@@ -16,14 +16,21 @@ const FORMS={
   cloud:[[0,.65,.3,.25,.35,.1,.5,.15],[48,.85,.7,.65,.8,.35,.9,.4],[96,1,.9,.85,1,.65,1,.65],[144,.5,.45,.4,.9,.15,1,.25],[192,1,.85,.75,1,.55,.9,.5],[240,.7,.35,.25,.4,.2,.6,.2],[256,.65,.3,.25,.35,.1,.5,.15]],
   ritual:[[0,1,.25,.1,0,.35,.1,.2],[16,1,.85,.5,.15,.8,.3,.45],[48,1,1,.8,.3,1,.5,.7],[80,1,.5,.3,.1,.55,.2,.35],[96,1,1,.8,.3,1,.5,.75],[128,1,.75,.5,.2,.8,.35,.5],[160,1,1,.8,.3,1,.5,.75],[176,1,.4,.1,0,.4,.1,.25],[192,1,.25,.1,0,.35,.1,.2]],
 };
-export function technoProductionScene(p,bar){
+export function technoProductionScene(p,bar,scene={}){
   const local=((bar%p.arrangement.bars)+p.arrangement.bars)%p.arrangement.bars,points=FORMS[p.arrangement.philosophy];
   let i=0;while(i<points.length-2&&points[i+1][0]<=local)i++;
   const a=points[i],b=points[i+1],t=smooth(clamp((local-a[0])/(b[0]-a[0]),0,1));
-  const v=a.slice(1).map((x,j)=>x+(b[j+1]-x)*t);
-  const kick=v[0]<.08?0:v[0];
-  return {kick,bass:v[1],motif:v[2],chords:v[3],hats:v[4],texture:v[5],tension:v[6],
-    detail:v[4]>.72,name:local<16?'Opening':local>=p.arrangement.bars-16?'Closing':kick===0?'Suspension':v[6]>.72?'Pressure':v[6]<.4?'Receding':'Developing'};
+  const kick=a[1]+(b[1]-a[1])*t;
+  scene.kick=kick<.08?0:kick;
+  scene.bass=a[2]+(b[2]-a[2])*t;
+  scene.motif=a[3]+(b[3]-a[3])*t;
+  scene.chords=a[4]+(b[4]-a[4])*t;
+  scene.hats=a[5]+(b[5]-a[5])*t;
+  scene.texture=a[6]+(b[6]-a[6])*t;
+  scene.tension=a[7]+(b[7]-a[7])*t;
+  scene.detail=scene.hats>.72;
+  scene.name=local<16?'Opening':local>=p.arrangement.bars-16?'Closing':scene.kick===0?'Suspension':scene.tension>.72?'Pressure':scene.tension<.4?'Receding':'Developing';
+  return scene;
 }
 
 export class TechnoProductionPlan{
