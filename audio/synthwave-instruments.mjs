@@ -63,8 +63,10 @@ export function sampleSynthwaveTone(v,frame,beats,brightness,movement){
     v.fmIndex=p.fm?Math.min(p.index*(.18+.82*Math.exp(-age/.3)),Math.max(0,(v.rate*.35/v.frequency-1)/(p.fm+1))):0;
   }
   v.g+=v.gStep;
-  let a=lookup(v.table,v.phase),b=lookup(v.table,v.phase2),c=lookup(v.table,v.phase3);
+  let a,b;
   if(p.fm){a=sin(v.phase+sin(v.modPhase)*v.fmIndex/TAU)*.8;b=sin(v.phase2+sin(v.modPhase)*v.fmIndex/TAU)*.8;v.modPhase=(v.modPhase+v.step*p.fm)%1;}
+  else{a=lookup(v.table,v.phase);b=lookup(v.table,v.phase2);}
+  const c=lookup(v.table,v.phase3);
   let l=a*.52+b*.23+c*.25,r=a*.23+b*.52+c*.25;
   if(p.noise){let n=v.noiseState;n^=n<<13;n^=n>>>17;n^=n<<5;v.noiseState=n>>>0;
     const noise=v.noiseState/2147483648-1;v.noiseLow+=.15*(noise-v.noiseLow);
@@ -79,7 +81,7 @@ export function sampleSynthwaveTone(v,frame,beats,brightness,movement){
   if(p.bass)l=r=(l+r)*.5*(1-p.sub)+sin(v.phase)*p.sub;
   v.highL+=v.highCoefficient*(l-v.highL);v.highR+=v.highCoefficient*(r-v.highR);
   const envelope=smooth(age/v.attack)*smooth((v.duration-age)/v.release)*
-    (p.sustain+(1-p.sustain)*Math.exp(-age/p.ampDecay))*p.level*(v.expression??1);
+    (p.sustain===1?1:p.sustain+(1-p.sustain)*Math.exp(-age/p.ampDecay))*p.level*(v.expression??1);
   v.left=envelope===0?0:(l-v.highL)*envelope;v.right=envelope===0?0:(r-v.highR)*envelope;
   v.phase=(v.phase+v.step)%1;v.phase2=(v.phase2+v.step*(1+p.spread))%1;v.phase3=(v.phase3+v.step*(1-p.spread*.83))%1;v.age++;
 }
@@ -95,7 +97,7 @@ export const SYNTHWAVE_KITS=Object.freeze({
 export function createSynthwaveDrum(event,rate,identity,tempo=100){
   const p=SYNTHWAVE_KITS[event.kit],name=event.drum,
     duration=name==='kick'?.45:name==='snare'?p.gate+.05:name==='clap'?.3:name==='open-hat'?.32:name==='tom'?.36:name==='crash'?1.45:name==='riser'?(event.beats??4)*60/tempo:.09;
-  return {...event,tuning:event.tuning??1,synthwaveDrum:true,profile:p,rate,duration,age:-Math.round((event.delay??0)*60/tempo*rate),phase:0,phase2:identity,
+  return {...event,tuning:event.tuning??1,synthwaveDrum:true,mixHat:name.includes('hat'),mixRoom:name==='snare'||name==='clap'||name==='tom'||name==='crash',profile:p,rate,duration,age:-Math.round((event.delay??0)*60/tempo*rate),phase:0,phase2:identity,
     noiseState:((identity*4294967296)>>>0)||1,low:0,body:0,
     high:1-Math.exp(-TAU*Math.min(rate*.4,p.cutoff)/rate),bodyCoefficient:1-Math.exp(-TAU*(name.includes('hat')?4200:name==='crash'?2500:1100)/rate)};
 }

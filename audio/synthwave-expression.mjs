@@ -101,8 +101,10 @@ export function sampleExpressiveSynthwaveTone(v,frame,beats,brightness,movement)
   }
   v.frequencyNow+=(v.frequency-v.frequencyNow)*v.glideCoefficient;v.step=v.frequencyNow/v.rate*v.pitchRatio;
   v.g+=v.gStep;
-  let a=lookup(v.table,v.phase),b=lookup(v.table,v.phase2),z=lookup(v.table,v.phase3);
+  let a,b;
   if(p.fm){a=sin(v.phase+sin(v.modPhase)*v.fmIndex/TAU)*.8;b=sin(v.phase2+sin(v.modPhase)*v.fmIndex/TAU)*.8;v.modPhase=(v.modPhase+v.step*p.fm)%1;}
+  else{a=lookup(v.table,v.phase);b=lookup(v.table,v.phase2);}
+  const z=lookup(v.table,v.phase3);
   let l=a*.52+b*.23+z*.25,r=a*.23+b*.52+z*.25;
   if(p.drive){l=l*p.drive/(1+Math.abs(l)*(p.drive-1));r=r*p.drive/(1+Math.abs(r)*(p.drive-1));}
   const g=v.g,a1=1/(1+g*(g+v.k)),a2=g*a1,a3=g*a2,
@@ -110,7 +112,7 @@ export function sampleExpressiveSynthwaveTone(v,frame,beats,brightness,movement)
     v3R=r-v.ic2R,v1R=a1*v.ic1R+a2*v3R,v2R=v.ic2R+a2*v.ic1R+a3*v3R;
   v.ic1L=2*v1L-v.ic1L;v.ic2L=2*v2L-v.ic2L;v.ic1R=2*v1R-v.ic1R;v.ic2R=2*v2R-v.ic2R;
   v.highL+=v.highCoefficient*(v2L-v.highL);v.highR+=v.highCoefficient*(v2R-v.highR);
-  const attack=smooth(age/v.attack),target=(p.sustain+(1-p.sustain)*Math.exp(-age/p.ampDecay))*p.level*(v.expression??1);
+  const attack=smooth(age/v.attack),target=(p.sustain===1?1:p.sustain+(1-p.sustain)*Math.exp(-age/p.ampDecay))*p.level*(v.expression??1);
   v.gain=v.retireAge===null?(v.startGain*(1-attack)+target*attack)*smooth((v.duration-age)/v.release)
     :v.retireGain*(1-smooth((age-v.retireAge)/v.retireSeconds));
   v.left=(v2L-v.highL)*v.gain;v.right=(v2R-v.highR)*v.gain;

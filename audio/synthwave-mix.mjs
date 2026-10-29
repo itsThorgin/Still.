@@ -44,13 +44,15 @@ export class SynthwaveMix {
     const pred=read(this.predelay,frame,rate*.023);this.predelay[frame%this.predelay.length]=input;input=pred;
     for(const buffer of this.diffusers){const i=frame%buffer.length,y=buffer[i]-input*.65;buffer[i]=input+y*.65;input=y;}
     
-    const a=this.lines[0],b=this.lines[1],c=this.lines[2],d=this.lines[3];
-    for(const line of this.lines)line.low+=this.damp*(line.buffer[frame%line.buffer.length]-line.low);
+    const a=this.lines[0],b=this.lines[1],c=this.lines[2],d=this.lines[3],
+      ai=frame%a.buffer.length,bi=frame%b.buffer.length,ci2=frame%c.buffer.length,di2=frame%d.buffer.length;
+    a.low+=this.damp*(a.buffer[ai]-a.low);b.low+=this.damp*(b.buffer[bi]-b.low);
+    c.low+=this.damp*(c.buffer[ci2]-c.low);d.low+=this.damp*(d.buffer[di2]-d.low);
     const x=a.low,y=b.low,z=c.low,w=d.low;
-    a.buffer[frame%a.buffer.length]=input*.35+(x+y+z+w)*.5*a.feedback;
-    b.buffer[frame%b.buffer.length]=input*.35+(x-y+z-w)*.5*b.feedback;
-    c.buffer[frame%c.buffer.length]=input*.35+(x+y-z-w)*.5*c.feedback;
-    d.buffer[frame%d.buffer.length]=input*.35+(x-y-z+w)*.5*d.feedback;
+    a.buffer[ai]=input*.35+(x+y+z+w)*.5*a.feedback;
+    b.buffer[bi]=input*.35+(x-y+z-w)*.5*b.feedback;
+    c.buffer[ci2]=input*.35+(x+y-z-w)*.5*c.feedback;
+    d.buffer[di2]=input*.35+(x-y-z+w)*.5*d.feedback;
     const wet=space*(mix.reverb??.75)*duck;
     l+=(x+z-y*.35)*wet;r+=(y+w-x*.35)*wet;
     let mid=(l+r)*.5+bass+drums,side=((l-r)*.5+hatSide)*p.width/100;

@@ -19,6 +19,7 @@ export class AudioEngine {
     this.monitorSettings = { highSolo: false };
     this.motionSettings = normalizeMotion();
     this.context = null;
+    this.analyser = null;
     this.active = null;
     this.voices = new Set();
     this.playing = false;
@@ -34,6 +35,7 @@ export class AudioEngine {
 
   async prepare() {
     if (!this.context || this.context.state === 'closed') {
+      this.setAnalysisEnabled(false);
       const AudioContextClass = globalThis.AudioContext ?? globalThis.webkitAudioContext;
       if (!AudioContextClass) throw playbackError('This browser does not support the required audio features.');
       this.context = new AudioContextClass({ latencyHint: 'playback' });
@@ -50,11 +52,6 @@ export class AudioEngine {
       this.transportEnvelope = new GainEnvelope(this.transportGain.gain, this.context.currentTime, 0);
       this.sessionGain.connect(this.transportGain).connect(this.master).connect(this.context.destination);
       
-      this.analyser = this.context.createAnalyser?.();
-      if (this.analyser) {
-        this.analyser.fftSize = 256;
-        this.sessionGain.connect(this.analyser);
-      }
       this.moduleReady = this.context.audioWorklet.addModule(new URL('./processor.mjs', import.meta.url)).catch(async (error) => {
         await this.context.close();
         this.context = null;
@@ -69,7 +66,28 @@ export class AudioEngine {
   }
 
   notify(message = '') {
+    if (!this.playing || this.paused || this.interrupted || this.context?.state !== 'running') this.setAnalysisEnabled(false);
     this.onChange({ playing: this.playing, paused: this.paused, interrupted: this.interrupted, message });
+  }
+
+  setAnalysisEnabled(enabled) {
+    if (!enabled) {
+      const analyser = this.analyser;
+      if (!analyser) return;
+      this.analyser = null;
+      // Disconnect only the visual tap; the audible gain chain stays connected.
+      try { this.sessionGain.disconnect(analyser); } catch {}
+      try { analyser.disconnect(); } catch {}
+      return;
+    }
+    if (this.analyser || !this.playing || this.paused || this.interrupted || this.context?.state !== 'running') return;
+    try {
+      const analyser = this.context.createAnalyser?.();
+      if (!analyser) return;
+      this.analyser = analyser;
+      analyser.fftSize = 2048;
+      this.sessionGain.connect(analyser);
+    } catch { this.setAnalysisEnabled(false); }
   }
 
   contextStateChanged() {
@@ -83,7 +101,7 @@ export class AudioEngine {
         this.context.suspend().catch(() => {});
       } else if (this.paused || this.interrupted) {
         this.restorePlayback();
-      }
+      } else if (this.playing) this.notify();
     } else if (!this.paused && !this.interrupted) {
       this.interrupted = true;
       this.transportEnvelope.hold(this.context.currentTime);

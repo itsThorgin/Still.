@@ -45,10 +45,6 @@ export class ElectronicSoundscape {
       this.ambientLevels = { melody: 1, accompaniment: 1, bass: 1, percussion: 1 };
       this.ambientSceneCoefficient = 1 - Math.exp(-32 / (rate * 2));
     }
-    this.echoLeft = new Float32Array(Math.ceil(rate * 2));
-    this.echoRight = new Float32Array(this.echoLeft.length);
-    this.chorusLeft = new Float32Array(Math.ceil(rate * 0.04));
-    this.chorusRight = new Float32Array(this.chorusLeft.length);
     this.echoLowL = this.echoLowR = 0;
     this.dcL = this.dcR = 0;
     this.dcCoefficient = 1 - Math.exp(-TAU * 18 / rate);
@@ -151,6 +147,18 @@ export class ElectronicSoundscape {
     this.synthwaveColour=this.kind==='synthwave'?synthwaveExpressionColour(c.value):null;
     this.synthwaveForeground=this.synthwaveColour&&!c.synthwaveWriting?new SynthwaveForeground(this.rate,this.synthwaveColour):null;
     this.synthwaveMix=c.synthwaveWriting?new ExpressiveSynthwaveMix(this.rate,c):null;
+    if(this.synthwaveMix){
+      // These effects paths never render together. Keep legacy-length views
+      // over the dedicated storage so a later legacy style can reuse it.
+      const mix=this.synthwaveMix,length=Math.ceil(this.rate*.04);
+      this.echoLeft=mix.delayL;this.echoRight=mix.delayR;
+      this.chorusLeft=mix.chorusL.subarray(0,length);this.chorusRight=mix.chorusR.subarray(0,length);
+    }else if(!this.echoLeft){
+      this.echoLeft=new Float32Array(Math.ceil(this.rate*2));
+      this.echoRight=new Float32Array(this.echoLeft.length);
+      this.chorusLeft=new Float32Array(Math.ceil(this.rate*.04));
+      this.chorusRight=new Float32Array(this.chorusLeft.length);
+    }
   }
 
   changeSeed(frame, params) {
@@ -171,8 +179,10 @@ export class ElectronicSoundscape {
     this.kickRelease=Math.exp(-1/(this.rate*0.12));
     this.configureInstruments();
     this.voices.length = this.drums.length = 0;
-    this.echoLeft.fill(0); this.echoRight.fill(0);
-    this.chorusLeft.fill(0); this.chorusRight.fill(0);
+    if(!this.synthwaveMix){
+      this.echoLeft.fill(0); this.echoRight.fill(0);
+      this.chorusLeft.fill(0); this.chorusRight.fill(0);
+    }
     this.echoLowL = this.echoLowR = this.dcL = this.dcR = this.kickEnvelope = 0;
     this.rumbleBuffer?.fill(0);this.rumbleLow=this.rumbleHigh=0;
     this.serial = this.step = 0;
@@ -229,14 +239,14 @@ export class ElectronicSoundscape {
 
     const rate = this.rate, movement = params.movement / 100;
     
-    if (frame % 32 === 0) {
+    if (!this.synthwaveMix && frame % 32 === 0) {
       this.chorusTimeL = 0.018 + 0.003 * Math.sin(TAU * frame / rate * 0.23);
       this.chorusTimeR = 0.022 + 0.003 * Math.sin(TAU * frame / rate * 0.19 + 1);
       if (this.ambientLevels) for (const role of Object.keys(this.ambientLevels))
         this.ambientLevels[role] += this.ambientSceneCoefficient * ((this.plan.layerTargets?.[role] ?? 1) - this.ambientLevels[role]);
     }
     
-    this.chorusTimeL ??= 0.018; this.chorusTimeR ??= 0.022;
+    if (!this.synthwaveMix) { this.chorusTimeL ??= 0.018; this.chorusTimeR ??= 0.022; }
     let left = 0, right = 0, bass = 0, synthSendL=0, synthSendR=0, drumRoom=0, synthLeadL=0,synthLeadR=0,synthPadL=0,synthPadR=0;
     for (let i = this.voices.length - 1; i >= 0; i--) {
       const voice = this.voices[i], age = voice.age / rate;
@@ -280,8 +290,8 @@ export class ElectronicSoundscape {
       if (voice.synthwaveDrum) {
         if(voice.drum==='kick'&&voice.age===0&&this.synthwaveMix)this.synthwaveMix.kickEnvelope=params.percussion>0?1:0;
         const sound=sampleSynthwaveDrum(voice)*voice.amplitude*params.percussion/100;drums+=sound;
-        if(voice.drum.includes('hat'))hatSide+=sound*.15;
-        if(['snare','clap','tom','crash'].includes(voice.drum))drumRoom+=sound;
+        if(voice.mixHat)hatSide+=sound*.15;
+        if(voice.mixRoom)drumRoom+=sound;
         continue;
       }
       if (voice.collectionDrum) {
