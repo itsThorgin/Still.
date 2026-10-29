@@ -144,17 +144,26 @@ export function initializeAudioArtwork(engine, {settings, onChange = () => {}, p
   const paths = ['wave-primary','wave-secondary','wave-high'].map(id=>document.getElementById(id));
   const bars = ['spectrum-low','spectrum-mid','spectrum-high'].map(id=>document.getElementById(id));
   const reduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
-  const samples = new Float32Array(2048), levels = new Float32Array(3), measured = new Float32Array(3);
-  const bands=Array.from({length:3},()=>new Float32Array(samples.length));
-  const frequencies = new Float32Array(1024), barLevels = new Float32Array(48), barTargets = new Float32Array(48);
+  let data;
+  function analysisData() {
+    if (!data) {
+      const samples = new Float32Array(2048);
+      data = { samples, levels: new Float32Array(3), measured: new Float32Array(3),
+        bands: Array.from({length:3},()=>new Float32Array(samples.length)),
+        frequencies: new Float32Array(1024), barLevels: new Float32Array(48), barTargets: new Float32Array(48) };
+    }
+    return data;
+  }
   let options = normalizeVisualization(settings);
   let frame = null, last = null, lastTick = -1, active = false, meterRate = 0, meter;
-  function enabled() { return options.enabled && engine.playing && !engine.paused && !engine.interrupted && !document.hidden && !reduced?.matches && !!engine.analyser && !!globalThis.requestAnimationFrame; }
+  function wanted() { return options.enabled && engine.playing && !engine.paused && !engine.interrupted && !document.hidden && !reduced?.matches && !!globalThis.requestAnimationFrame; }
+  function enabled() { return wanted() && !!engine.analyser; }
   function draw(now) {
     frame = null;
     if (!enabled()) { reconcile(); return; }
     const tick=Math.floor(now*60/1000);
     if (tick !== lastTick) {
+      const {samples, levels, measured, bands, frequencies, barLevels, barTargets} = analysisData();
       lastTick=tick;
       const elapsed=last===null?1/60:Math.min(.15,(now-last)/1000);
       last = now;
@@ -187,18 +196,21 @@ export function initializeAudioArtwork(engine, {settings, onChange = () => {}, p
     frame = requestAnimationFrame(draw);
   }
   function reconcile() {
-    art?.setAttribute('data-animation',enabled()?'running':'paused');
-    if (enabled()) {
+    const needed = wanted();
+    engine.setAnalysisEnabled(needed);
+    const running = needed && !!engine.analyser;
+    art?.setAttribute('data-animation',running?'running':'paused');
+    if (running) {
       active = true;
       if (frame === null) frame = requestAnimationFrame(draw);
     } else {
       if (frame !== null) cancelAnimationFrame(frame);
       frame = null;
+      data = null; meter = null; meterRate = 0;
       if (active) {
-        active = false; levels.fill(0); last = null; lastTick = -1;
+        active = false; last = null; lastTick = -1;
         for (const key of ['data-low-energy','data-mid-energy','data-high-energy']) art.setAttribute(key,'0');
         art.style.setProperty('--audio-light', '.35');
-        barLevels.fill(0);
         if(options.enabled)drawRestingArtwork(phase(),options.mode);
       }
     }
@@ -214,7 +226,7 @@ export function initializeAudioArtwork(engine, {settings, onChange = () => {}, p
     const index=VISUALIZATION_MODES.findIndex(mode=>mode.value===options.mode),current=VISUALIZATION_MODES[index],next=VISUALIZATION_MODES[(index+1)%VISUALIZATION_MODES.length];
     if(name)name.textContent=options.enabled?current.label:'Visualization off';
     if(modeButton){modeButton.disabled=!options.enabled;modeButton.title=options.enabled?`${current.label}. Next: ${next.label}`:'Show visualization to change its mode';}
-    levels.fill(0);barLevels.fill(0);last=null;lastTick=-1;
+    data?.levels.fill(0);data?.barLevels.fill(0);last=null;lastTick=-1;
     if(options.enabled)drawRestingArtwork(phase(),options.mode);
     reconcile();
   }
@@ -224,7 +236,6 @@ export function initializeAudioArtwork(engine, {settings, onChange = () => {}, p
     const index=VISUALIZATION_MODES.findIndex(mode=>mode.value===options.mode);
     configure({...options,mode:VISUALIZATION_MODES[(index+1)%VISUALIZATION_MODES.length].value});onChange({...options});
   });
-  setInterval(reconcile, 250);
   configure(options);
   return {configure,refresh(){if(options.enabled&&!active)drawRestingArtwork(phase(),options.mode);reconcile();}};
 }
